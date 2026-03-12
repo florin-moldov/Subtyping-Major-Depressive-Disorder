@@ -11,6 +11,8 @@ Additionally, the repository includes:
 
 - *blogpost/*: A blogpost written in Dutch (.pdf and .html formats).
 
+- *LICENSE*: A file that specifies the terms of use for the code and data in the repository.
+
 - *.gitignore*: A file that specifies intentionally untracked files to ignore.
 
 - *requirements.txt*: A file that lists the Python dependencies for the project.
