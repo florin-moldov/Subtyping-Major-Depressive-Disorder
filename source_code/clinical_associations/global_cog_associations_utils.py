@@ -1,0 +1,2415 @@
+"""Utility functions for robust depression–cognition association analyses.
+
+This module provides the core statistical, plotting, and logging
+building blocks used by `global_cog_associations_main.py` to implement a
+median-based depression–cognition analysis pipeline focusing on global-level
+connectivity derived depression subtypes.
+
+Main responsibilities
+---------------------
+
+* **Cohort loading and renaming**
+
+    - :func:`load_and_rename_cohort_data` loads a combined control +
+        depression cohort CSV and standardizes key cognitive and covariate
+        column names into the human-readable names used throughout the
+        project (e.g. mapping raw UK Biobank field IDs to descriptive
+        labels such as ``age_at_assessment`` or
+        ``Snap_task_mean_reaction_time``).
+
+* **Robust task-wise and domain-wise z-scores**
+
+    - :func:`calculate_robust_z_scores` computes robust, control-
+        referenced z-scores for specified cognitive variables using the
+        control group median and median absolute deviation (MAD) as
+        reference. It returns the depression cohort rows with new ``*_z``
+        columns and appends a detailed summary of control medians, MADs,
+        and depression-group z-score distributions to an optional log file
+        (including a caller-specified ``log_context`` string, which
+        typically encodes connectivity type and cluster).
+
+    - :func:`calculate_composite_z_score` aggregates sets of task-wise
+        z-scores into composite cognitive domains (e.g. processing speed,
+        working memory) using either the mean or the median across
+        constituent tasks. It writes a concise description of the domain,
+        included variables, and composite distribution (median, IQR, range)
+        to an optional log file.
+
+* **Quantile regression and R integration**
+
+    - :func:`quantile_regression` wraps R's :mod:`quantreg` package via
+        :mod:`rpy2` to perform two types of analyses on data supplied
+        through a temporary CSV:
+
+            1. **Cluster-contrast mode** (``test_against_zero=False``): fits a
+                 separate quantile regression for each dependent variable of the
+                 form ``DV ~ group_column + covariates`` at a specified
+                 quantile (typically ``tau=0.5`` for the median). It supports
+                 arbitrary group factor (``Cluster 1`` vs ``Cluster 0``) and 
+                 returns p-values and effect estimates for the requested comparison levels.
+
+            2. **One-sample mode** (``test_against_zero=True``): fits
+                 ``DV ~ covariates`` or ``DV ~ 1`` for already z-scored
+                 variables and tests whether the median differs from 0.
+
+    - All R-side console output (model summaries, warnings, custom
+        ``cat`` calls) is directed into a caller-specified log file via R's
+        ``sink`` mechanism; nothing is printed to the Python terminal. When
+        present in the data, the ``Connectivity_Type`` and ``Cluster``
+        columns are also logged, so each R block clearly indicates the
+        modality and cluster context of the analysis.
+
+* **Multiple testing support**
+
+    - :func:`apply_multiple_testing_correction` provides FDR
+        (Benjamini–Hochberg) and Bonferroni corrections for a list of
+        p-values. Instead of printing to stdout, it builds a formatted
+        table (variable name, test type, raw p-value, adjusted p-value,
+        significance marker) and appends it to an optional text log,
+        prefixed with a free-form ``log_context`` string that usually
+        encodes the level of analysis (task-wise vs domain-wise) and the
+        corresponding connectivity/cluster configuration.
+
+* **Visualization utilities**
+
+    - :func:`plot_cognitive_distributions_violin` generates violin plots of
+        cognitive variable distributions across groups (e.g. depression vs control or connectivity clusters).
+
+    - :func:`plot_conn_cognition_association` creates scatter plots with median-based regression lines to visualize relationships between 
+        connectivity features and cognitive scores, optionally faceted by cluster.
+
+    - :func:`plot_z_scores` generates radar-style (spider) plots of
+        z-score profiles for either tasks or domains. It uses a stable color
+        mapping to ensure that clusters are colored consistently across analyses according to which clustering approach 
+        they originated from and supports flexible figure saving and overlaying of multiple cluster profiles into a 
+        single radar plot for comparison. Also shows significance annotations for each variable based on 
+        between-cluster FDR-corrected comparisons.
+
+    - Several internal helpers and a global registry
+        (``_RADAR_OVERLAY_STORE``) support building overlaid radar charts
+        that combine multiple polygons (e.g. overall cohort vs connectivity
+        clusters) into a single figure.
+
+Architecture
+------------
+The script is organized into functional sections:
+
+- **Utility Functions**
+
+- **R Package Management**
+
+- **Data Loading and Preprocessing**
+
+- **Quantile Regression**
+
+- **Visualization**
+
+Important implementation notes
+------------------------------
+- Several functions are stateful: `plot_z_scores` will register per-call
+    summaries in the module-level registries (``_RADAR_OVERLAY_STORE``,
+    ``_RADAR_OVERLAY_PVALS``, etc.). These registries are used by
+    ``_render_connectivity_overlay`` to build overlaid radar figures and
+    therefore rely on callers to use consistent `save_path` naming
+    conventions (for example filenames containing ``Cluster_0`` or
+    ``schaefer1000+tian54``). The registries are not thread-safe.
+- Several routines invoke R via :mod:`rpy2` (notably
+    :func:`quantile_regression`). These functions set rpy2 conversion
+    rules inside the function scope; callers running multiple R-enabled
+    operations in the same interpreter should be aware that rpy2's
+    conversion context is touched.
+- Some operations are computationally intensive by default (for
+    example, bootstrapping in ``quantile_regression`` uses a large
+    default ``R``), so developers may want to pass smaller values when
+    testing.
+- Many functions write files (PNGs, CSVs, and log files). Functions
+    that accept a ``save_path`` or ``log_path`` will create parent
+    directories as needed and may print saved paths for convenience.
+    File-write failures are generally caught to avoid breaking
+    long-running batch analyses.
+"""
+ 
+import os
+import math
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+from statsmodels.stats import multitest
+import rpy2.robjects as ro  # assumes you have rpy2 installed and R installed and configured to version >= 4.0
+from rpy2.robjects.packages import importr
+from rpy2.robjects import pandas2ri, default_converter
+from rpy2.robjects.conversion import localconverter
+from typing import Dict, List, Tuple, Optional, Literal, Sequence, Union
+import seaborn as sns
+
+# ==============================================================================
+# UTILITY FUNCTIONS
+# ==============================================================================
+# Global registry to assemble overlaid radar charts across calls
+# Key: (depression_codes, association_type, base_kind['task'|'domain'])
+_RADAR_OVERLAY_STORE: Dict[Tuple[str, str, str], Dict[str, Dict]] = {}
+_RADAR_OVERLAY_PVALS: Dict[Tuple[str, str, str], Dict[str, Dict[str, float]]] = {}
+_RADAR_OVERLAY_PVALS_META: Dict[Tuple[str, str, str], Dict[str, str]] = {}
+_RADAR_OVERLAY_SE_OVERALL: Dict[Tuple[str, str, str], Dict[str, float]] = {}
+_RADAR_OVERLAY_SE_CLUSTER: Dict[Tuple[str, str, str], Dict[str, Dict[str, float]]] = {}
+
+def _cluster_colors_for_conn_type(conn_type: Optional[str]) -> Optional[Dict[str, str]]:
+    """Return a cluster color mapping for a connectivity type.
+
+    Parameters
+    ----------
+    conn_type : Optional[str]
+        One of ``'functional'``, ``'structural'`` or ``'sfc'`` (case
+        insensitive). If ``None``, this function returns ``None``.
+
+    Returns
+    -------
+    Optional[Dict[str, str]]
+        A mapping from cluster labels (string keys ``'0'`` and ``'1'``)
+        to hex color codes. The mapping is suitable for use as a
+        seaborn/matplotlib ``palette``.
+    """
+    if conn_type is None:
+        return None
+    key = str(conn_type).lower().strip()
+    if key in ("functional",):
+        return {"0": "#ccebc5", "1": "#fb9a99"}
+    if key in ("structural",):
+        return {"0": "#d62728", "1": "#8c564b"}
+    if key in ("sfc", "structure-function coupling", "structure function coupling"):
+        return {"0": "#17becf", "1": "#7f7f7f"}
+    return {"0": "#1f77b4", "1": "#ff7f0e"}
+
+def _infer_conn_type_from_path(path: Optional[str]) -> Optional[str]:
+    """Infer a connectivity type from a filename or path string.
+
+    This performs a simple, case-insensitive substring search. It is
+    intentionally permissive (it will match paths containing the word
+    ``'functional'``, ``'structural'``, or ``'sfc'``) and returns
+    ``None`` when no known token is found.
+
+    Parameters
+    ----------
+    path : Optional[str]
+        Path or filename to inspect.
+
+    Returns
+    -------
+    Optional[str]
+        One of ``'functional'``, ``'structural'``, ``'sfc'`` or ``None``.
+    """
+    if not path:
+        return None
+    lower_path = str(path).lower()
+    if "structural" in lower_path:
+        return "structural"
+    if "functional" in lower_path:
+        return "functional"
+    if "sfc" in lower_path:
+        return "sfc"
+    return None
+
+def _append_to_text_log(log_path: Optional[str], block: str) -> None:
+    """Append a block of text to a log file, creating parent dirs if needed.
+
+    This helper is intentionally fault tolerant: failures to create
+    directories or write to the file are swallowed to avoid interrupting
+    long-running analyses. The function writes UTF-8 text and ensures the
+    appended block ends with a newline.
+
+    If ``log_path`` is None, this is a no-op.
+    """
+    if not log_path:
+        return
+    try:
+        log_dir = os.path.dirname(log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(block)
+            if not block.endswith("\n"):
+                f.write("\n")
+    except Exception:
+        # Logging should never break the main analysis
+        pass
+
+def build_icd_factor_block(icd_covariates: Sequence[str], data_frame_name: str = "data") -> str:
+    """
+    Build an R snippet that factors ICD-10 covariate columns if they exist in the R dataframe.
+
+    Parameters
+    ----------
+    icd_covariates : Sequence[str]
+        Iterable of ICD-10 covariate column names (e.g. ["I10", "Z864"]).
+    data_frame_name : str, optional
+        Name of the R data.frame variable (default: "data").
+
+    Returns
+    -------
+    str
+        R code block (multi-line string) like:
+        if ("I10" %in% colnames(data)) data[["I10"]] <- factor(data[["I10"]])
+        if ("Z864" %in% colnames(data)) data[["Z864"]] <- factor(data[["Z864"]])
+    """
+    lines = []
+    for cov in icd_covariates or []:
+        # ensure cov is a simple string and escape embedded quotes
+        cov_str = str(cov)
+        cov_safe = cov_str.replace('"', '\\"').replace("'", "\\'")
+        # use data[["colname"]] form to avoid parsing issues with $ and non-syntactic names
+        lines.append(f'if ("{cov_safe}" %in% colnames({data_frame_name})) {data_frame_name}[["{cov_safe}"]] <- factor({data_frame_name}[["{cov_safe}"]])')
+    return "\n".join(lines)
+
+def apply_multiple_testing_correction(
+    p_values: List[float],
+    variable_names: List[str],
+    test_methods: List[str],
+    method: Literal['fdr_bh', 'bonferroni'] = 'fdr_bh',
+    alpha: float = 0.05,
+    log_path: Optional[str] = None,
+    log_context: Optional[str] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Apply multiple testing correction to p-values.
+    
+    Parameters
+    ----------
+    p_values : List[float]
+        List of uncorrected p-values
+    variable_names : List[str]
+        List of variable names
+    test_methods : List[str]
+        List of test methods used
+    method : {'fdr_bh', 'bonferroni'}, optional
+        Correction method:
+        - 'fdr_bh': False Discovery Rate (Benjamini-Hochberg) - recommended
+        - 'bonferroni': Bonferroni correction - more conservative
+        (default: 'fdr_bh')
+    alpha : float, optional
+        Family-wise error rate or false discovery rate threshold (default: 0.05)
+    log_path : str or None, optional
+        Path to log file for writing the correction summary table. If None, no log is written.
+    log_context : str, optional
+        Additional context to include in the log summary (e.g., "Model 1: Depression vs Control").
+    
+    Returns
+    -------
+    reject : np.ndarray
+        Boolean array indicating which hypotheses are rejected
+    pvals_corrected : np.ndarray
+        Array of corrected p-values
+    
+    Examples
+    --------
+    >>> reject, corrected = apply_multiple_testing_correction(
+    ...     p_values=[0.01, 0.05, 0.10],
+    ...     variable_names=['var1', 'var2', 'var3'],
+    ...     test_methods=['Quantile Regression', 'Quantile Regression', 'Quantile Regression']
+    ... )
+    
+    Notes
+    -----
+    - FDR controls the expected proportion of false positives among rejections
+    - Bonferroni controls the family-wise error rate (FWER)
+    - FDR is less conservative and has more power than Bonferroni
+    """
+    if not (len(p_values) == len(variable_names) == len(test_methods)):
+        raise ValueError("Lengths of p_values, variable_names, and test_methods must match")
+    if method == 'fdr_bh':
+        reject, pvals_corrected = multitest.fdrcorrection(p_values, alpha=alpha)
+        correction_name = 'FDR (Benjamini-Hochberg)'
+    elif method == 'bonferroni':
+        reject, pvals_corrected, _, _ = multitest.multipletests(
+            p_values, alpha=alpha, method='bonferroni'
+        )
+        correction_name = 'Bonferroni'
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    lines: List[str] = []
+    lines.append("\n" + "=" * 80)
+    lines.append(f"MULTIPLE TESTING CORRECTION: {correction_name}")
+    if log_context:
+        lines.append(f"Context: {log_context}")
+    lines.append("=" * 80)
+    lines.append(f"\n{'Variable':<40} {'Test':<20} {'p (raw)':<12} {'p (adj)':<12} {'Sig.':<5}")
+    lines.append("-" * 90)
+
+    for i, var in enumerate(variable_names):
+        sig_marker = "***" if pvals_corrected[i] < 0.001 else \
+                     "**" if pvals_corrected[i] < 0.01 else \
+                     "*" if pvals_corrected[i] < 0.05 else "n.s."
+
+        lines.append(
+            f"{var:<40} {test_methods[i]:<20} {p_values[i]:<12.6f} "
+            f"{pvals_corrected[i]:<12.6f} {sig_marker:<5}"
+        )
+
+    lines.append("-" * 90)
+    lines.append(f"Significant results: {reject.sum()} / {len(p_values)}")
+    lines.append("=" * 80)
+
+    _append_to_text_log(log_path, "\n".join(lines))
+
+    return reject, pvals_corrected
+
+def format_pvalue(p: float) -> str:
+    """
+    Format p-value for display with significance stars.
+    
+    Parameters
+    ----------
+    p : float
+        P-value to format
+    
+    Returns
+    -------
+    str
+        Formatted p-value string with significance annotation
+    
+    Examples
+    --------
+    >>> format_pvalue(0.0001)
+    'p < 0.001***'
+    >>> format_pvalue(0.045)
+    'p = 0.045*'
+    >>> format_pvalue(0.12)
+    'p = 0.120 n.s.'
+    """
+    if p < 0.001:
+        return "p < 0.001***"
+    elif p < 0.01:
+        return f"p = {p:.3f}**"
+    elif p < 0.05:
+        return f"p = {p:.3f}*"
+    else:
+        return f"p = {p:.3f} n.s."
+
+# ==============================================================================
+# R PACKAGE MANAGEMENT
+# ==============================================================================
+
+def install_r_package_if_missing(package_name):
+    """Install an R package if it is not already installed.
+
+    This helper executes a small R snippet via `rpy2` that checks for the
+    package and runs `install.packages()` if necessary. It may require
+    network access and appropriate permissions in the R environment.
+
+    Parameters
+    ----------
+    package_name : str
+        Name of the R package to install (e.g., 'quantreg', 'multcomp').
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    If R or `rpy2` is not available/configured correctly this function
+    will raise exceptions from the underlying R runtime. The caller
+    should handle these exceptions if a graceful fallback is desired.
+    """
+    # Execute a small R snippet via rpy2 that checks for package
+    # availability and installs it if missing. This requires network
+    # access and write permissions for R's library path.
+    ro.r(f'''
+        if (!require("{package_name}", quietly = TRUE)) {{
+            install.packages("{package_name}", repos = "https://cloud.r-project.org")
+        }}
+    ''')
+
+
+def setup_r_environment():
+    """Initialize the R environment and import commonly used R packages.
+
+    This function ensures `rpy2` pandas conversion is active within the
+    function context, installs missing R packages (`quantreg`)
+    if necessary, and returns imported R package objects for use by other
+    functions (notably `run_quantile_regression`).
+
+    Returns
+    -------
+    dict
+        Mapping with keys: 'base', 'utils', 'stats', 'quantreg'.
+
+    Raises
+    ------
+    Exception
+        Exceptions from `importr` or the R runtime are propagated to the
+        caller (e.g., if R is not installed).
+    """
+    # Ensure rpy2 conversion rules (especially pandas<->R data.frame)
+    # are available in the current context/thread by using a localconverter.
+    # This avoids ContextVar-related NotImplementedError when importr() is
+    # called from notebook kernels or non-main threads.
+    with localconverter(default_converter + pandas2ri.converter):
+        base = importr('base')
+        utils = importr('utils')
+        stats = importr('stats')
+
+        install_r_package_if_missing('quantreg')
+
+        quantreg = importr('quantreg')
+
+    return {
+        'base': base,
+        'utils': utils,
+        'stats': stats,
+        'quantreg': quantreg,
+    }
+
+# ==============================================================================
+# DATA LOADING AND PREPROCESSING
+# ==============================================================================
+def load_and_rename_cohort_data(
+    file_path: str,
+    column_mapping: Optional[Dict[str, str]] = None
+) -> pd.DataFrame:
+    """
+    Load cohort data and rename columns to human-readable names.
+    
+    Parameters
+    ----------
+    file_path : str
+        Path to the CSV file containing cohort data
+    column_mapping : Dict[str, str], optional
+        Dictionary mapping original column names to new names
+        If None, uses default UK Biobank cognitive variable mapping
+    
+    Returns
+    -------
+    pd.DataFrame
+        Loaded and renamed DataFrame
+    
+    Examples
+    --------
+    >>> data = load_and_rename_cohort_data('data/UKB/cohorts/combined_cohort.csv')
+    >>> print(data.columns)
+    """
+    # Load data
+    data = pd.read_csv(file_path)
+    
+    # Default UK Biobank cognitive variable mapping
+    if column_mapping is None:
+        column_mapping = {
+            'p21003_i2': 'age_at_assessment',
+            'p31': 'sex',
+            'p20023_i2': 'Snap_task_mean_reaction_time',
+            'p4282_i2': 'Reverse_number_recall_task_span',
+            'p6348_i2': 'Trail_making_A_duration',
+            'p6350_i2': 'Trail_making_B_duration',
+            'p23324_i2': 'Symbol_digit_substitution_task_correct',
+            'p21004_i2': 'Tower_rearranging_task_correct',
+            'p20197_i2': 'Paired_associates_learning_task_correct',
+            'p20018_i2': 'Prospective_memory_task_score',
+            'p399_i2_a1': 'Pairs_matching_task_errors_3_pairs',
+            'p399_i2_a2': 'Pairs_matching_task_errors_6_pairs',
+            'p20016_i2': 'Fluid_intelligence_score',
+            'p6373_i2': 'Matrix_pattern_completion_correct',
+            'p26302_i2': 'Vocabulary_score'
+        }
+    
+    # Rename columns
+    data = data.rename(columns=column_mapping)
+    
+    return data
+
+def calculate_robust_z_scores(
+    data: pd.DataFrame,
+    vars: List[str],
+    group_column: str = 'depression_status',
+    control_value: int = 0,
+    depression_value: int = 1,
+    log_path: Optional[str] = None,
+    log_context: Optional[str] = None,
+) -> pd.DataFrame:
+    """Calculate robust z-scores for cognitive variables in the depression cohort.
+
+    Z-scores are referenced to the control cohort distribution using the
+    median and median absolute deviation (MAD):
+
+        z = 0.6745 * (X_depression - μ_control) / MAD_control
+
+    where:
+
+    - ``X_depression``: individual score in the depression group
+    - ``μ_control``: median of the control group
+    - ``MAD_control``: median absolute deviation of the control group
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input DataFrame containing both control and depression groups.
+    vars : List[str]
+        List of cognitive variable names to calculate z-scores for.
+    group_column : str, optional
+        Column name for grouping (default: 'depression_status')
+    control_value : int, optional
+        Value representing control group (default: 0)
+    depression_value : int, optional
+        Value representing depression group (default: 1)
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing:
+        - Depression cohort rows only
+        - Z-score columns (suffixed with ``'_z'``)
+        - Reference statistics (control median and MAD) printed to console
+    
+    Examples
+    --------
+    >>> z_scored_data = calculate_robust_z_scores(
+    ...     data,
+    ...     vars=['Fluid_intelligence_score', 'Vocabulary_score']
+    ... )
+    >>> print(z_scored_data[['Fluid_intelligence_score', 'Fluid_intelligence_score_z']].head())
+    
+    Notes
+    -----
+    - Negative z-scores indicate performance below the control median.
+    - Positive z-scores indicate performance above the control median.
+    - Missing values are preserved (NaN → NaN in the corresponding z-score).
+    
+    Interpretation Guide:
+        z = -2.0: Performance 2 MAD below control median (2.3rd percentile)
+        z = -1.0: Performance 1 MAD below control median (15.9th percentile)
+        z =  0.0: Performance at control median (50th percentile)
+        z = +1.0: Performance 1 MAD above control median (84.1st percentile)
+        z = +2.0: Performance 2 MAD above control median (97.7th percentile)
+    """
+    # Separate control and depression cohorts
+    control_data = data[data[group_column] == control_value].copy()
+    depression_data = data[data[group_column] == depression_value].copy()
+
+    lines: List[str] = []
+    lines.append("\n" + "=" * 80)
+    lines.append("Z-SCORE CALCULATION")
+    if log_context:
+        lines.append(f"Context: {log_context}")
+    lines.append("=" * 80)
+    lines.append(f"\nReference group: Control (n = {len(control_data)})")
+    lines.append(f"Target group: Depression (n = {len(depression_data)})")
+    lines.append("\nControl Group Statistics (Reference):")
+    lines.append("-" * 80)
+    lines.append(f"{'Variable':<45} {'Median':<12} {'MAD':<12}")
+    lines.append("-" * 80)
+
+    for var in vars:
+        if var not in data.columns:
+            lines.append(f"Warning: Variable '{var}' not found in DataFrame")
+            continue
+        
+        # Calculate control median and MAD
+        control_median = control_data[var].median()
+        control_mad = np.median(np.abs(control_data[var] - control_median))
+        # Guard against zero MAD which would produce infinite/NaN z-scores.
+        # Replace exact-zero or non-finite MAD with a tiny epsilon so that
+        # z-scores remain numerically stable while still indicating near-
+        # zero dispersion in the control reference distribution.
+        if not np.isfinite(control_mad) or control_mad == 0:
+            control_mad = 1e-6
+
+        lines.append(f"{var:<45} {control_median:<12.3f} {control_mad:<12.3f}")
+        
+        # Calculate z-scores for depression cohort
+        depression_data[f'{var}_z'] = (
+            0.6745 * (depression_data[var] - control_median) / control_mad
+        )
+    
+    lines.append("-" * 80)
+
+    # Summary statistics for z-scores
+    lines.append("\nDepression Group Z-Score Summary (median-based):")
+    lines.append("-" * 80)
+    lines.append(f"{'Variable':<45} {'Median Z':<12} {'IQR Z':<12} {'Min Z':<12} {'Max Z':<12}")
+    lines.append("-" * 80)
+
+    for var in vars:
+        if var not in data.columns:
+            continue
+        
+        z_col = f'{var}_z'
+        z_median = depression_data[z_col].median()
+        q25 = depression_data[z_col].quantile(0.25)
+        q75 = depression_data[z_col].quantile(0.75)
+        z_iqr = q75 - q25
+        z_min = depression_data[z_col].min()
+        z_max = depression_data[z_col].max()
+
+        lines.append(
+            f"{var:<45} {z_median:<12.3f} {z_iqr:<12.3f} {z_min:<12.3f} {z_max:<12.3f}"
+        )
+
+    lines.append("-" * 80)
+    lines.append("=" * 80)
+
+    _append_to_text_log(log_path, "\n".join(lines))
+
+    return depression_data
+
+
+def calculate_composite_z_score(
+    z_scored_data: pd.DataFrame,
+    z_vars: List[str],
+    output_column: str = 'composite_cognitive_z',
+    method: Literal['mean', 'median'] = 'median',
+    log_path: Optional[str] = None,
+    log_context: Optional[str] = None,
+) -> pd.DataFrame:
+    """Calculate a composite cognitive z-score by aggregating z-scores.
+    
+    Parameters
+    ----------
+    z_scored_data : pd.DataFrame
+        DataFrame with individual z-score columns (e.g., from
+        :func:`calculate_robust_z_scores`).
+    z_vars : List[str]
+        List of z-score column names to average (e.g., ['Reasoning_z', 'Memory_z'])
+    output_column : str, optional
+        Name for the composite z-score column (default:
+        ``'composite_cognitive_z'``).
+    method : {'mean', 'median'}, optional
+        Aggregation method (default: 'median')
+        - 'mean': Average z-scores (sensitive to outliers)
+        - 'median': Median z-scores (robust to outliers)
+    
+    Returns
+    -------
+    pd.DataFrame
+        Original DataFrame with added composite z-score column
+    
+    Examples
+    --------
+    >>> # First calculate individual z-scores
+    >>> z_data = calculate_robust_z_scores(data, vars=['Fluid_intelligence_score'])
+    >>> # Then calculate composite
+    >>> z_data = calculate_composite_z_score(
+    ...     z_data,
+    ...     z_vars=['Fluid_intelligence_score_z', 'Vocabulary_score_z']
+    ... )
+    >>> print(z_data['composite_cognitive_z'].describe())
+
+    Notes
+    -----
+    - Composite z-scores provide a global cognitive performance index.
+    - The mean is familiar but sensitive to extreme values.
+    - The median is more robust for skewed or heavy-tailed distributions.
+    - Missing values are handled by ignoring them (``skipna=True``).
+    """
+    if method == 'mean':
+        z_scored_data[output_column] = z_scored_data[z_vars].mean(axis=1)
+    elif method == 'median':
+        z_scored_data[output_column] = z_scored_data[z_vars].median(axis=1)
+    else:
+        raise ValueError(f"Unknown method: {method}. Use 'mean' or 'median'.")
+
+    lines: List[str] = []
+    lines.append("\n" + "=" * 80)
+    lines.append(f"COMPOSITE Z-SCORE ({method.upper()})")
+    if log_context:
+        lines.append(f"Context: {log_context}")
+    lines.append("=" * 80)
+    lines.append(f"Combined {len(z_vars)} domains:")
+    for var in z_vars:
+        lines.append(f"  - {var}")
+
+    lines.append("\nComposite z-score statistics (median-focused):")
+    median_val = z_scored_data[output_column].median()
+    q25 = z_scored_data[output_column].quantile(0.25)
+    q75 = z_scored_data[output_column].quantile(0.75)
+    iqr = q75 - q25
+    lines.append(f"  Median: {median_val:.3f}")
+    lines.append(f"  IQR: {iqr:.3f} (Q1={q25:.3f}, Q3={q75:.3f})")
+    lines.append(
+        f"  Range: [{z_scored_data[output_column].min():.3f}, "
+        f"{z_scored_data[output_column].max():.3f}]"
+    )
+    lines.append("=" * 80)
+
+    _append_to_text_log(log_path, "\n".join(lines))
+
+    return z_scored_data
+
+# ==============================================================================
+# QUANTILE REGRESSION
+# ==============================================================================
+def quantile_regression(
+    tmp_csv_path: str = "/tmp/combined_data.csv",
+    dependent_variables: Sequence[str] = ("Connectivity",),
+    covariates: Sequence[str] = ("age_at_assessment", "sex"),
+    group_column: str = "Cluster",
+    reference_group: str = "Cluster 1",
+    comparison_groups: str = "Cluster 0",
+    tau: float = 0.5,
+    R: int = 10000,
+    test_against_zero: bool = False,
+    return_effects: bool = False,
+    r_output_log_path: Optional[str] = None,
+) -> Union[Dict[str, float], Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]]:
+    """Run quantile regression in R for one or more dependent variables.
+
+    This function expects a CSV at ``tmp_csv_path`` with columns at least:
+
+    - One or more numeric dependent variables (given in ``dependent_variables``)
+    - Either:
+        - ``group_column`` (factor-like): values including "Cluster 0" and
+          "Cluster 1" for between-cluster comparisons, or
+        - No group column, for one-sample tests against zero (e.g. median-based
+          z-scores referenced to the control cohort).
+    - Optionally, covariates (numeric or categorical) specified in
+      ``covariates`` (used in both modes when provided).
+
+    Two modes are supported:
+
+    1. Cluster contrast (default, ``test_against_zero=False``)
+         For each dependent variable, fits a separate quantile regression model
+         of the form::
+
+                 DV ~ group_column + covariates
+
+         at quantile ``tau``, using bootstrapped standard errors and percentile
+         confidence intervals via ``boot.rq``.
+
+         The function returns p-values and effect estimates for the requested 
+         comparison levels in the group factor. For cluster-vs-cluster comparisons, 
+         simply set ``group_column`` to your cluster label column (e.g. "Cluster") 
+         and set ``reference_group`` / ``comparison_groups`` accordingly. 
+
+    2. One-sample test against zero (``test_against_zero=True``)
+         Intended for already z-scored (median-based) dependent variables that
+         are referenced to the control cohort (control median = 0). For each
+         dependent variable, it fits a quantile regression model::
+
+                 DV ~ covariates    # or DV ~ 1 if no covariates are given
+
+         and tests whether the estimated median (intercept) differs from 0.
+         It returns p-values for the intercept term per dependent variable.
+
+    Parameters
+    ----------
+    tmp_csv_path : str, optional
+        Path to the temporary CSV used as input to R (default:
+        "/tmp/combined_data.csv").
+    dependent_variables : Sequence[str], optional
+        Names of the dependent variable columns (default: ("Connectivity",)).
+    covariates : Sequence[str], optional
+        Covariate column names to include in every model (default:
+        ("age_at_assessment", "sex")).
+    group_column : str, optional
+        Name of the group column (default: "Cluster"). Only used in
+        cluster-contrast mode.
+    reference_group : str, optional
+        Reference level used in cluster-contrast mode (default: "Cluster 1").
+        The returned coefficients/p-values correspond to each comparison group
+        relative to this reference.
+    comparison_groups : Optional[Sequence[str]], optional
+        Which group levels to compare against ``reference_group``
+        (defaults to "Cluster 0" for cluster-contrast mode).
+    tau : float, optional
+        Quantile to estimate (default: 0.5 for the median).
+    R : int, optional
+        Number of bootstrap replications used both in ``summary.rq``
+        (for bootstrap standard errors) and in the explicit ``boot.rq``
+        call (for percentile confidence intervals). Defaults to 10000.
+    test_against_zero : bool, optional
+        If ``False`` (default), perform a between-group comparison
+        (Cluster 0 vs Cluster 1) via ``group_column``. If ``True``, ignore
+        any group information and perform a one-sample test of whether the
+        median of each dependent variable differs from zero.
+    return_effects : bool, optional
+        If ``True``, additionally return effect sizes and standard errors 
+        for each dependent variable.
+
+    Returns
+    -------
+    Dict[str, float] or Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]
+        If ``return_effects`` is False (default):
+
+        - Cluster-contrast mode: mapping dependent variable name -> p-value for
+          the "ClusterCluster0" coefficient.
+        - One-sample mode: mapping dependent variable name -> p-value for the
+          intercept (median) differing from zero.
+
+        If ``return_effects`` is True, returns a tuple::
+
+            (p_values, effects, se_effects)
+
+        where ``effects`` maps each dependent variable to its estimated
+        coefficient (group effect or intercept), ``se_effects`` maps to the
+        corresponding standard errors.
+    """
+
+    # Notes and side-effects
+    # ----------------------
+    # - This function sets and reads several variables in the R global
+    #   environment (quantreg_p_values, quantreg_effects, quantreg_se)
+    #   which are then extracted back into Python. The R global
+    #   environment is mutated during execution.
+    # - The function sets rpy2 conversion rules (pandas/numpy converters)
+    #   for the current context; this affects rpy2 conversion behavior in
+    #   the active interpreter. If other rpy2 calls happen concurrently in
+    #   the same process, be aware of potential converter interactions.
+    # - Default bootstrap replication counts are large (R defaults to
+    #   10000). This provides stable percentile CIs but can be expensive
+    #   in time and memory. For quick tests reduce R.
+    # - The input CSV must contain the dependent variable columns and,
+    #   for group-contrast mode, a valid group_column. Numeric group
+    #   columns coded as 0/1 are mapped heuristically to Control/
+    #   Depression for columns named like Group or containing
+    #   depress|status|case (case-insensitive).
+
+    # Normalize inputs
+    if isinstance(dependent_variables, str):  # allow single string for convenience
+        dependent_vars = [dependent_variables]
+    else:
+        dependent_vars = list(dependent_variables)
+
+    covars = list(covariates)
+    if not test_against_zero and group_column is None:
+        raise ValueError("group_column must be provided when test_against_zero is False")
+
+    # RHS for one-sample models: only covariates; if none, use intercept-only model
+    one_sample_rhs = " + ".join(covars) if covars else "1"
+
+    if r_output_log_path is None:
+        r_output_log_path = "/tmp/quantile_regression_R_output.txt"
+    try:
+        log_dir = os.path.dirname(r_output_log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+    except Exception:
+        # If we cannot create directories, R will still attempt to write and
+        # will error inside its tryCatch blocks; keep going.
+        pass
+
+    dep_vars_r = "c(" + ", ".join(f'"{dv}"' for dv in dependent_vars) + ")"
+    covar_names_r = (
+        "c(" + ", ".join(f'"{c}"' for c in covars) + ")" if covars else "c()"
+    )
+
+    # Factor sex by default if present among covariates
+    factor_sex_block = "data$sex <- factor(data$sex)" if "sex" in covars else ""
+
+    # Factor ICD-10 code covariates if they appear among `covars`.
+    # The helper `build_icd_factor_block` returns an R snippet that will
+    # be injected into the R block below and executed only if the column
+    # exists in the R data.frame.
+    icd_covars = [c for c in covars if c[0].isupper() and c[1:].isdigit()]
+    factor_ICD_block = build_icd_factor_block(icd_covariates=icd_covars)
+
+    # Center age covariate inside R if requested via covariates.
+    # This keeps the public Python API simple (users pass 'age_at_assessment')
+    # while ensuring the regression intercept corresponds to a typical age.
+    age_center_block = (
+        'if ("age_at_assessment" %in% colnames(data)) {\n'
+        '  data$age_at_assessment <- data$age_at_assessment - '\
+        'median(data$age_at_assessment, na.rm = TRUE)\n'
+        '}'
+        if "age_at_assessment" in covars
+        else ""
+    )
+
+    # Prepare R code for group-contrast vs one-sample modes
+    comparison_groups_r = (
+        "NULL"
+        if comparison_groups is None
+        else "c(" + ", ".join(f'\"{g}\"' for g in comparison_groups) + ")"
+    )
+
+    # We'll now enter a local conversion context for rpy2. Using
+    # `localconverter(default_converter)` ensures that Python objects
+    # (pandas DataFrames, numpy arrays, etc.) are converted to their R
+    # equivalents for the duration of the `with` block. This avoids
+    # intermittent conversion errors across different execution contexts.
+    with localconverter(default_converter):
+        if not test_against_zero:
+            # Between-cluster comparisons
+            # The following rpy2 call executes a multi-line R script that
+            # reads the temporary CSV, prepares the group factor, fits
+            # quantile regression models, performs bootstrap CIs, computes robust R2, and
+            # assigns named result vectors into R's global environment so
+            # Python can extract p-values and effects after the call.
+            ro.r(
+                f'''
+            # ---- R console logging (stdout + messages) ----
+            log_path <- "{r_output_log_path}"
+            tryCatch({{
+                sink(file = log_path, append = TRUE)
+                sink(file = log_path, append = TRUE, type = "message")
+            }}, error = function(e) {{
+                cat(paste0("[sink error] ", conditionMessage(e), "\n"),
+                    file = log_path, append = TRUE)
+            }})
+            on.exit({{
+                tryCatch(sink(type = "message"), error = function(e) {{}})
+                tryCatch(sink(), error = function(e) {{}})
+                cat("===== /quantile_regression =====\n")
+            }}, add = TRUE)
+
+            cat("\n===== quantile_regression (group-contrast) =====\n")
+            cat(paste0("tmp_csv_path: {tmp_csv_path}\n"))
+            cat(paste0("tau: {tau}, R: {R}\n"))
+
+            library(quantreg)
+            # Load and prepare data
+            data <- read.csv("{tmp_csv_path}")
+
+            # If available, log connectivity type and cluster context
+            if ("Connectivity_Type" %in% colnames(data)) {{
+                conn_types <- unique(as.character(data$Connectivity_Type))
+                cat("Connectivity_Type in data: ",
+                    paste(conn_types, collapse = ", "), "\n")
+            }}
+            if ("Cluster" %in% colnames(data)) {{
+                clusters <- unique(as.character(data$Cluster))
+                cat("Cluster levels in data: ",
+                    paste(clusters, collapse = ", "), "\n")
+            }}
+
+            # Handle group column values robustly.
+            # If the column already contains labels like "Cluster 0"/"Cluster 1",
+            # only coerce to a factor (preserving the expected level order). If the
+            # column contains numeric 0/1 (or string "0"/"1"), map these to the
+            # corresponding cluster labels. For any other encoding, fall back to
+            # factoring the existing values.
+            if ("{group_column}" %in% colnames(data)) {{
+                col_vals <- data[["{group_column}"]]
+                # Work with character view for safe comparison of mixed types
+                uvals_char <- unique(na.omit(as.character(col_vals)))
+
+                # Case A: already labeled as 'Cluster 0'/'Cluster 1' -> just factor
+                if (all(uvals_char %in% c("Cluster 0", "Cluster 1"))) {{
+                    data[["{group_column}"]] <- factor(col_vals, levels = c("Cluster 0", "Cluster 1"))
+                }} else {{
+                    # Case B: numeric 0/1 or string "0"/"1" -> map to labels
+                    if (all(uvals_char %in% c("0", "1")) || is.numeric(col_vals)) {{
+                        if (all(uvals_char %in% c("0", "1"))) {{
+                            col_vals_num <- as.numeric(as.character(col_vals))
+                        }} else if (is.numeric(col_vals)) {{
+                            col_vals_num <- as.numeric(col_vals)
+                        }} else {{
+                            col_vals_num <- NA_real_
+                        }}
+
+                        if (!all(is.na(col_vals_num)) && all(na.omit(unique(col_vals_num)) %in% c(0,1))) {{
+                            data[["{group_column}"]] <- factor(
+                                ifelse(col_vals_num == 1, "Cluster 1",
+                                       ifelse(col_vals_num == 0, "Cluster 0", NA)),
+                                levels = c("Cluster 0", "Cluster 1")
+                            )
+                        }} else {{
+                            # Unexpected numeric values — fall back to factoring original values
+                            data[["{group_column}"]] <- factor(col_vals)
+                        }}
+                    }} else {{
+                        # Any other encoding: simply factor the existing values
+                        data[["{group_column}"]] <- factor(col_vals)
+                    }}
+                }}
+            }} else {{
+                stop("Group column not found in data but test_against_zero is False; provide a Group column or set test_against_zero=TRUE.")
+            }}
+
+            # Use the provided group column directly for modeling.
+            model_group_col <- "{group_column}"
+            {factor_sex_block}
+            {factor_ICD_block}
+            {age_center_block}
+
+            dep_vars <- {dep_vars_r}
+            covar_names <- {covar_names_r}
+            p_values <- c()
+            effects <- c()
+            se_values <- c()
+
+            # Restrict to requested groups and set reference
+            reference_group <- "{reference_group}"
+            comparison_groups <- {comparison_groups_r}
+            group_levels <- levels(data[[model_group_col]])
+            if (is.null(comparison_groups)) {{
+                comparison_groups <- setdiff(group_levels, reference_group)
+            }}
+            keep_groups <- unique(c(reference_group, comparison_groups))
+            missing_groups <- setdiff(keep_groups, group_levels)
+            if (length(missing_groups) > 0) {{
+                stop(paste0(
+                    "Requested group levels not present in data: ",
+                    paste(missing_groups, collapse = ", "),
+                    ". Available levels: ",
+                    paste(group_levels, collapse = ", ")
+                ))
+            }}
+
+            data_sub <- data[data[[model_group_col]] %in% keep_groups, ]
+            data_sub[[model_group_col]] <- droplevels(data_sub[[model_group_col]])
+            data_sub[[model_group_col]] <- relevel(data_sub[[model_group_col]], ref = reference_group)
+
+            for (g in keep_groups) {{
+                print(paste("N", g, ":", sum(data_sub[[model_group_col]] == g)))
+            
+            }}
+            # Function to compute a robust R^2 based on MAD, since traditional R^2 is not meaningful for quantile regression residuals
+            robust_R2 <- function(y, yhat) {{
+
+                y <- as.numeric(y)
+                yhat <- as.numeric(yhat)
+
+                stopifnot(length(y) == length(yhat))
+
+                ok <- is.finite(y) & is.finite(yhat)
+                y <- y[ok]
+                yhat <- yhat[ok]
+
+                if (length(y) < 2) return(NA_real_)
+
+                s_res <- mad(y - yhat, center = 0, constant = 1)
+                s_tot <- mad(y, center = median(y), constant = 1)
+
+                if (!is.finite(s_tot) || s_tot == 0) return(NA_real_)
+
+                R2 <- 1 - (s_res / s_tot)^2
+
+                # numerical safety clamp
+                R2 <- max(min(R2, 1), -Inf)
+                return(R2)
+            }}   
+            for (dv in dep_vars) {{
+                cat("\n==================================================\n")
+                cat("QUANTILE REGRESSION FOR DEPENDENT VARIABLE:", dv, "\n")
+                cat("==================================================\n")
+                set.seed(123)
+                # Build formula DV ~ group + covariates
+                rhs_terms <- c(model_group_col, covar_names)
+                rhs_terms <- rhs_terms[!is.na(rhs_terms) & nzchar(rhs_terms)]
+                formula_str <- paste(dv, "~", paste(rhs_terms, collapse = " + "))
+                cat("Formula:", formula_str, "\n")
+                fml <- as.formula(formula_str)
+
+                X <- model.matrix(fml, data = data_sub)
+                y <- data_sub[[dv]]
+
+                model <- rq(fml, data = data_sub, tau = {tau})
+                R2_MAD <- robust_R2(y, fitted(model))
+                cat(sprintf("R2_MAD (median-based): %.2f\n", R2_MAD))
+                model_summary <- summary.rq(model, se = "boot", R = {R})
+                print(model_summary)
+
+                boot_out <- boot.rq(x = X, y = y, tau = {tau}, R = {R})
+                if (is.null(colnames(boot_out$B))) {{
+                    colnames(boot_out$B) <- colnames(X)
+                }}
+                cis <- apply(boot_out$B, 2, quantile, probs = c(0.025, 0.975))
+                print("95% bootstrap CIs for all coefficients:")
+                print(cis)
+
+                coef_table <- model_summary$coefficients
+
+                for (cg in comparison_groups) {{
+                    term_name <- paste0(model_group_col, cg)
+                    if (!(term_name %in% rownames(coef_table))) {{
+                        cat("Warning: term '", term_name, "' not found in model for ", dv, "\n", sep = "")
+                        next
+                    }}
+
+                    p_raw <- coef_table[term_name, "Pr(>|t|)"]
+                    p_clamped <- ifelse(p_raw < 2.2e-16, 2.2e-16, p_raw)
+                    coef_group <- coef_table[term_name, "Value"]
+                    se_group <- coef_table[term_name, "Std. Error"]
+                    p_str <- ifelse(p_clamped <= 2.2e-16, "< 2.2e-16", sprintf("%.2e", p_clamped))
+
+                    key <- paste(dv, cg, sep = "::")
+                    p_values[key] <- p_clamped
+                    effects[key] <- coef_group
+                    se_values[key] <- se_group
+                }}
+            }}
+
+            assign("quantreg_p_values", p_values, envir = .GlobalEnv)
+            assign("quantreg_effects", effects, envir = .GlobalEnv)
+            assign("quantreg_se", se_values, envir = .GlobalEnv)
+            '''
+            )
+        else:
+            # One-sample test against zero for (modified) z-scored variables
+            ro.r(
+                f'''
+            # ---- R console logging (stdout + messages) ----
+            log_path <- "{r_output_log_path}"
+            tryCatch({{
+                sink(file = log_path, append = TRUE)
+                sink(file = log_path, append = TRUE, type = "message")
+            }}, error = function(e) {{
+                cat(paste0("[sink error] ", conditionMessage(e), "\n"),
+                    file = log_path, append = TRUE)
+            }})
+            on.exit({{
+                tryCatch(sink(type = "message"), error = function(e) {{}})
+                tryCatch(sink(), error = function(e) {{}})
+                cat("===== /quantile_regression =====\n")
+            }}, add = TRUE)
+
+            cat("\n===== quantile_regression (one-sample vs 0) =====\n")
+            cat(paste0("tmp_csv_path: {tmp_csv_path}\n"))
+            cat(paste0("tau: {tau}, R: {R}\n"))
+
+            library(quantreg)
+
+            # Load data (z-scored DVs)
+            data <- read.csv("{tmp_csv_path}")
+
+            # If available, log connectivity type and cluster context
+            if ("Connectivity_Type" %in% colnames(data)) {{
+                conn_types <- unique(as.character(data$Connectivity_Type))
+                cat("Connectivity_Type in data: ",
+                    paste(conn_types, collapse = ", "), "\n")
+            }}
+            if ("Cluster" %in% colnames(data)) {{
+                clusters <- unique(as.character(data$Cluster))
+                cat("Cluster levels in data: ",
+                    paste(clusters, collapse = ", "), "\n")
+            }}
+
+            {factor_sex_block}
+            {factor_ICD_block}
+            {age_center_block}
+
+            dep_vars <- {dep_vars_r}
+            covar_names <- {covar_names_r}
+            p_values <- c()
+            effects <- c()
+            se_values <- c()
+
+            for (dv in dep_vars) {{
+                cat("\n==================================================\n")
+                cat("ONE-SAMPLE QUANTILE REGRESSION FOR DEPENDENT VARIABLE:", dv, "\n")
+                cat("(testing median vs 0 for z-scored variable)\n")
+                cat("==================================================\n")
+                set.seed(123)
+                # Model: DV ~ covariates (or ~ 1 if none); test intercept vs 0
+                formula_str <- paste(dv, "~", "{one_sample_rhs}")
+                cat("Formula:", formula_str, "\n")
+                fml <- as.formula(formula_str)
+
+                X <- model.matrix(fml, data = data)
+                y <- data[[dv]]
+
+                model <- rq(fml, data = data, tau = {tau})
+                model_summary <- summary.rq(model, se = "boot", R = {R})
+                print(model_summary)
+
+                boot_out <- boot.rq(x = X, y = y, tau = {tau}, R = {R})
+                cis <- apply(boot_out$B, 2, quantile, probs = c(0.025, 0.975))
+                print("95% bootstrap CIs for all coefficients:")
+                print(cis)
+
+                coef_table <- model_summary$coefficients
+                if (!("(Intercept)" %in% rownames(coef_table))) {{
+                    cat("Warning: term '(Intercept)' not found in model for", dv, "\n")
+                }} else {{
+                    p_raw <- coef_table["(Intercept)", "Pr(>|t|)"]
+                    p_clamped <- ifelse(p_raw < 2.2e-16, 2.2e-16, p_raw)
+
+                    coef_int <- coef_table["(Intercept)", "Value"]
+                    se_int <- coef_table["(Intercept)", "Std. Error"]
+                    p_str <- ifelse(p_clamped <= 2.2e-16, "< 2.2e-16", sprintf("%.2e", p_clamped))
+
+                    p_values[dv] <- p_clamped
+                    effects[dv] <- coef_int
+                    se_values[dv] <- se_int
+                }}
+            }}
+
+            assign("quantreg_p_values", p_values, envir = .GlobalEnv)
+            assign("quantreg_effects", effects, envir = .GlobalEnv)
+            assign("quantreg_se", se_values, envir = .GlobalEnv)
+            '''
+            )
+
+    # Extract p-values back into Python as a named vector
+    with localconverter(default_converter):
+        r_p_values = ro.r("quantreg_p_values")
+        r_names = list(ro.r("names(quantreg_p_values)"))
+
+    p_values: Dict[str, float] = {}
+    for i, name in enumerate(r_names):
+        p_values[str(name)] = float(r_p_values[i])
+
+    # Optionally extract effect estimates (group coefficient or intercept)
+    effects: Dict[str, float] = {}
+    se_effects: Dict[str, float] = {}
+    try:
+        with localconverter(default_converter):
+            r_effects = ro.r("quantreg_effects")
+            r_effect_names = list(ro.r("names(quantreg_effects)"))
+            for i, name in enumerate(r_effect_names):
+                effects[str(name)] = float(r_effects[i])
+            r_se = ro.r("quantreg_se")
+            r_se_names = list(ro.r("names(quantreg_se)") )
+            for i, name in enumerate(r_se_names):
+                se_effects[str(name)] = float(r_se[i])
+    except Exception:
+        effects = {}
+        se_effects = {}
+
+    if return_effects:
+        return p_values, effects, se_effects
+
+    return p_values
+
+# ==============================================================================
+# VISUALIZATION
+# ==============================================================================
+def plot_cognitive_distributions_violin(
+    data: pd.DataFrame,
+    variables: Sequence[str],
+    group_column: str = "depression_status",
+    control_value: int = 0,
+    depression_value: int = 1,
+    control_label: str = "Control",
+    depression_label: str = "Depression",
+    control_color: str = "#2ca02c",
+    depression_color: str = "#6a3d9a",
+    plot_depression_only: bool = False,
+    plot_depression_clusters: bool = False,
+    cluster_column: str = "Cluster",
+    cluster_order: Optional[Sequence[str]] = None,
+    conn_type: Optional[str] = None,
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (16, 10),
+    dpi: int = 150,
+    title: Optional[str] = None,
+) -> None:
+    """Plot control vs depression, depression-only (z-scored variables) or cluster distributions 
+    (z-scored variables) for cognitive variables as violins.
+
+    Depending on parameters, creates a single figure with one subplot per variable and each 
+    subplot contains either two violins: control on the left and depression on the right 
+    or cluster-specific violins for the depression group or 1 depression-only violin 
+    (useful for already z-scored variables where controls are not available).
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame containing both groups and the variables of interest.
+    variables : Sequence[str]
+        Cognitive variable column names to visualize.
+    group_column : str, optional
+        Column name defining group membership (default: "depression_status").
+    control_value : int, optional
+        Value identifying control rows (default: 0).
+    depression_value : int, optional
+        Value identifying depression rows (default: 1).
+    control_label : str, optional
+        Label for control group (default: "Control").
+    depression_label : str, optional
+        Label for depression group (default: "Depression").
+    control_color : str, optional
+        Color for control violin (default: green).
+    depression_color : str, optional
+        Color for depression violin (default: purple).
+    plot_depression_only : bool, optional
+        If True, plot only the depression group violin (useful when control
+        values are unavailable, e.g., depression-only z-scores).
+    plot_depression_clusters : bool, optional
+        If True, plot depression-only distributions split by cluster labels.
+        This overrides ``plot_depression_only`` and ignores controls.
+    cluster_column : str, optional
+        Column name containing cluster labels (default: "Cluster").
+    cluster_order : Sequence[str], optional
+        Optional order for cluster labels on the x-axis.
+    conn_type : str, optional
+        Connectivity type used to derive cluster colors via
+        ``_cluster_colors_for_conn_type``.
+    save_path : str, optional
+        If provided, save the figure to this path.
+    figsize : Tuple[int, int], optional
+        Figure size in inches (default: (16, 10)).
+    dpi : int, optional
+        Figure DPI (default: 150).
+    title : str, optional
+        Overall figure title.
+    """
+    if not variables:
+        raise ValueError("No cognitive variables provided for violin plotting.")
+
+    n_vars = len(variables)
+    n_cols = 3 if n_vars >= 3 else n_vars
+    n_rows = int(math.ceil(n_vars / n_cols))
+
+    # Increase height per row to prevent y-axis label overlap
+    adjusted_figsize = (figsize[0], figsize[1] * n_rows / 3)
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=adjusted_figsize, dpi=dpi, squeeze=False)
+    axes_flat = axes.flatten()
+
+    def _pretty_label(label: str) -> str:
+        return str(label).replace("_", " ")
+
+    if plot_depression_clusters:
+        control_data = pd.DataFrame()
+        depression_data = data.copy()
+    else:
+        control_data = data[data[group_column] == control_value]
+        depression_data = data[data[group_column] == depression_value]
+
+    for idx, var in enumerate(variables):
+        ax = axes_flat[idx]
+        if var not in data.columns:
+            ax.text(0.5, 0.5, f"Missing: {var}", ha="center", va="center")
+            ax.set_axis_off()
+            continue
+
+        if plot_depression_clusters:
+            depression_vals = depression_data[var].dropna().to_numpy()
+            if depression_vals.size == 0:
+                ax.text(0.5, 0.5, f"No data: {var}", ha="center", va="center")
+                ax.set_axis_off()
+                continue
+        else:
+            control_vals = control_data[var].dropna().to_numpy()
+            depression_vals = depression_data[var].dropna().to_numpy()
+            if control_vals.size == 0 and depression_vals.size == 0:
+                ax.text(0.5, 0.5, f"No data: {var}", ha="center", va="center")
+                ax.set_axis_off()
+                continue
+
+        if plot_depression_clusters:
+            if cluster_column not in depression_data.columns:
+                ax.text(0.5, 0.5, f"Missing: {cluster_column}", ha="center", va="center")
+                ax.set_axis_off()
+                continue
+
+            cluster_vals = depression_data[cluster_column].dropna().astype(str)
+            if cluster_vals.empty:
+                ax.text(0.5, 0.5, f"No clusters: {var}", ha="center", va="center")
+                ax.set_axis_off()
+                continue
+
+            plot_df = pd.DataFrame({
+                "Cluster": cluster_vals,
+                var: depression_data.loc[cluster_vals.index, var].to_numpy(),
+            })
+
+            if cluster_order is None:
+                order = sorted(plot_df["Cluster"].unique())
+            else:
+                order = [str(v) for v in cluster_order]
+
+            cluster_colors = _cluster_colors_for_conn_type(conn_type) or {}
+            palette = {}
+            for label in order:
+                key = label.replace("Cluster", "").strip()
+                palette[label] = cluster_colors.get(key, depression_color)
+
+        elif plot_depression_only:
+            plot_df = pd.DataFrame({
+                "Group": [depression_label] * len(depression_vals),
+                var: depression_vals,
+            })
+            order = [depression_label]
+            palette = {depression_label: depression_color}
+        else:
+            plot_df = pd.DataFrame({
+                "Group": ([control_label] * len(control_vals)) + ([depression_label] * len(depression_vals)),
+                var: np.concatenate([control_vals, depression_vals]) if control_vals.size and depression_vals.size
+                else (control_vals if control_vals.size else depression_vals),
+            })
+            order = [control_label, depression_label]
+            palette = {control_label: control_color, depression_label: depression_color}
+
+        # When supplying an explicit palette, pass the category as `hue`
+        # to conform with newer seaborn semantics and avoid deprecation
+        # warnings; disable the extra legend since the x-axis already
+        # labels the categories.
+        sns.violinplot(
+            data=plot_df,
+            x="Cluster" if plot_depression_clusters else "Group",
+            y=var,
+            hue=("Cluster" if plot_depression_clusters else "Group"),
+            order=order,
+            palette=palette,
+            ax=ax,
+            legend=False,
+        )
+
+        ax.set_title(_pretty_label(var), fontsize=10)
+        ax.tick_params(axis="x", labelsize=9)
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+
+    for ax in axes_flat[n_vars:]:
+        ax.set_axis_off()
+
+    if title:
+        fig.suptitle(title, fontsize=14)
+
+    # Increase spacing to prevent y-axis label overlap
+    fig.tight_layout(rect=[0, 0, 1, 0.96] if title else None, h_pad=3.0, w_pad=2.0)
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    
+
+def plot_z_scores(
+    z_scored_data: pd.DataFrame,
+    z_vars: List[str],
+    save_path: Optional[str] = None,
+    figsize: Tuple[int, int] = (20, 20),
+    association_type: str = 'cognition',
+    type_z_score: str = 'task',
+    overall_title: str = 'Z-Scores (Depression Cohort)',
+) -> None:
+    """Visualize z-score profiles as a radar (spider) chart.
+
+    This function computes sample medians for each requested z-score
+    variable and maps signed medians to radial coordinates using the
+    transformation::
+
+        r = med_range + median
+
+    where ``med_range`` is a positive scalar chosen to ensure the radial
+    ticks and displayed polygons are interpretable and not clipped. By
+    design, negative medians map inside the zero-median ring and
+    positive medians map outside it; the nominal tick range is
+    ``[-0.70, 0.70]`` but the range will grow automatically if the data
+    exceed that bound.
+
+    The function also computes bootstrap-based standard errors for the
+    medians (default ``n_boot = 5000``) and may render a shaded SE
+    band. These bootstrap computations are moderately expensive and can
+    be reduced by changing the local ``n_boot`` variable or by promoting
+    it to a parameter if desired.
+
+    Side effects
+    ------------
+    - When ``save_path`` is provided, the function writes a PNG to that
+      path and may register the result into the module-level overlay
+      stores (``_RADAR_OVERLAY_STORE`` and related maps). Overlay
+      rendering depends on filename and directory conventions: files
+      that contain ``Cluster_0`` / ``Cluster_1`` and are saved under
+      connectivity-specific directories (e.g. ``.../schaefer1000+tian54/functional_con/``)
+      will be used to assemble overall vs cluster overlay figures.
+    - The function will ``print`` the saved path on success and close
+      the figure to avoid memory growth.
+
+    Preconditions
+    -------------
+    - At least 3 variables with finite medians are required to draw a
+      radar chart.
+
+    Parameters
+    ----------
+    z_scored_data : pd.DataFrame
+        DataFrame containing z-score columns (e.g., from
+        :func:`calculate_robust_z_scores`).
+    z_vars : List[str]
+        List of z-score column names to plot (e.g.,
+        ``['Fluid_intelligence_score_z', 'Vocabulary_score_z']``).
+    save_path : str, optional
+        Path to save the radar chart image (PNG). If None, the plot
+        is not saved to disk (default: None).
+    figsize : Tuple[int, int], optional
+        Figure size in inches (width, height) (default: (20, 20)).
+    association_type : {'cognition', 'symptoms'}, optional
+        Type of association being visualized (default: 'cognition').
+        Affects color scheme.
+    type_z_score : str, optional
+        Descriptor for the z-score type (e.g., 'task', 'cluster 0',
+        'overall') (default: 'task').
+    overall_title : str, optional
+        Overall title for the radar chart (default: 'Z-Scores (Depression Cohort)').
+    """
+
+    def _pretty_label(v: str) -> str:
+        base = v[:-2] if v.endswith("_z") else v
+        return base.replace("_", " ")
+
+    # -----------------------------
+    # Bootstrap SE for medians (resample with replacement)
+    # -----------------------------
+    def _bootstrap_median_se(values: np.ndarray, n_boot: int, rng: np.random.Generator) -> float:
+        values = np.asarray(values, dtype=float)
+        values = values[np.isfinite(values)]
+        if values.size == 0:
+            return np.nan
+        if values.size == 1:
+            return 0.0
+        n = values.size
+        medians = np.empty(n_boot, dtype=float)
+        for i in range(n_boot):
+            sample = rng.choice(values, size=n, replace=True)
+            medians[i] = np.nanmedian(sample)
+        return float(np.nanstd(medians, ddof=1)) if n_boot > 1 else 0.0
+
+    rng = np.random.default_rng(123)
+    n_boot = 5000
+    se_map: Dict[str, float] = {}
+    for var in z_vars:
+        if var not in z_scored_data.columns:
+            se_map[var] = np.nan
+            continue
+        se_map[var] = _bootstrap_median_se(z_scored_data[var].to_numpy(), n_boot=n_boot, rng=rng)
+
+    # -----------------------------
+    # Compute per-variable sample medians only (ignore model-based values)
+    # The user requested plotting only sample medians with no SEs.
+    # -----------------------------
+    med_signed = {}
+    for var in z_vars:
+        if var not in z_scored_data.columns:
+            vals = np.asarray([], dtype=float)
+        else:
+            vals = np.asarray(z_scored_data[var].dropna(), dtype=float)
+
+        if vals is None or len(vals) == 0:
+            med_signed[var] = np.nan
+            continue
+
+        # Sample median (from observed data)
+        med_signed[var] = float(np.nanmedian(vals))
+
+    # Order variables alphabetically by their pretty labels so that
+    # axis positions are fixed and independent of effect size.
+    finite_vars = [v for v in z_vars if np.isfinite(med_signed.get(v, np.nan))]
+    var_order = sorted(finite_vars, key=lambda v: _pretty_label(v).lower())
+    if len(var_order) < 3:
+        raise ValueError(
+            "Radar chart requires at least 3 variables with finite medians; "
+            f"got {len(var_order)}."
+        )
+
+    med = np.asarray([med_signed[v] for v in var_order], dtype=float)
+    # Preserve sign: map signed medians into radial coordinates so that
+    # negative medians appear closer to the center (below the 0-line) and
+    # positive medians appear further out (above the 0-line).
+    # Mapping used: r = med_range + med (linear). This places med = -med_range
+    # at r = 0, med = 0 at r = med_range, and med = +med_range at r = 2*med_range.
+    # Enforce fixed nominal tick range, but allow med_range to grow if data exceed it.
+    fixed_min = -0.70
+    fixed_max = 0.70
+    med_max_abs = np.nanmax(np.abs(med))
+
+    # Expand range to accommodate SE bands so they don't clip at the center.
+    se_vals_for_range = []
+    for var_name in var_order:
+        se_val = se_map.get(var_name)
+        try:
+            se_float = float(se_val)
+        except (TypeError, ValueError):
+            se_float = 0.0
+        if not np.isfinite(se_float) or se_float < 0:
+            se_float = 0.0
+        se_vals_for_range.append(se_float)
+    se_vals_for_range = np.asarray(se_vals_for_range, dtype=float)
+    med_plus_se = np.abs(med) + se_vals_for_range
+    med_se_max = np.nanmax(med_plus_se) if med_plus_se.size else np.nan
+
+    # ensure med_range is at least the fixed maximum, but grow if necessary
+    range_candidate = med_max_abs
+    if np.isfinite(med_se_max):
+        range_candidate = max(range_candidate, med_se_max)
+    med_range = float(max(fixed_max, range_candidate if np.isfinite(range_candidate) else fixed_max))
+
+    # Do not clip medians — map signed medians directly to radial coordinates
+    r_vals = med_range + med
+
+    # -----------------------------
+    # Build polar coordinates
+    # -----------------------------
+    n = len(var_order)
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    angles_closed = np.concatenate([angles, angles[:1]])
+    med_closed = np.concatenate([r_vals, r_vals[:1]])
+
+    # -----------------------------
+    # Plot
+    # -----------------------------
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, polar=True)
+    # Reference ring at the zero-median level (drawn outward from center)
+    r_zero = med_range
+    theta_dense = np.linspace(0.0, 2 * np.pi, 720)
+    # Background shading: smooth gradient (faint at 0-line, stronger outward)
+    min_alpha = 0.04
+    max_alpha = 0.30
+    theta_edges = np.linspace(0.0, 2 * np.pi, 361)
+    # Red region: 0 -> r_zero
+    r_edges_red = np.linspace(0.0, r_zero, 256)
+    r_mid_red = 0.5 * (r_edges_red[:-1] + r_edges_red[1:])
+    dist_red = (r_zero - r_mid_red) / max(r_zero, 1e-8)
+    alpha_red = min_alpha + (max_alpha - min_alpha) * dist_red
+    rgba_red = np.zeros((len(r_mid_red), len(theta_edges) - 1, 4))
+    rgba_red[..., 0] = 0xb2 / 255.0
+    rgba_red[..., 1] = 0x18 / 255.0
+    rgba_red[..., 2] = 0x2b / 255.0
+    rgba_red[..., 3] = alpha_red[:, None]
+    ax.pcolormesh(theta_edges, r_edges_red, rgba_red, shading="auto", zorder=0)
+    # Green region: r_zero -> r_max
+    r_max = 2.0 * med_range
+    r_edges_green = np.linspace(r_zero, r_max, 256)
+    r_mid_green = 0.5 * (r_edges_green[:-1] + r_edges_green[1:])
+    dist_green = (r_mid_green - r_zero) / max(r_max - r_zero, 1e-8)
+    alpha_green = min_alpha + (max_alpha - min_alpha) * dist_green
+    rgba_green = np.zeros((len(r_mid_green), len(theta_edges) - 1, 4))
+    rgba_green[..., 0] = 0x00 / 255.0
+    rgba_green[..., 1] = 0x6d / 255.0
+    rgba_green[..., 2] = 0x2c / 255.0
+    rgba_green[..., 3] = alpha_green[:, None]
+    ax.pcolormesh(theta_edges, r_edges_green, rgba_green, shading="auto", zorder=0)
+    # thicker continuous zero-line
+    ax.plot(theta_dense, np.full_like(theta_dense, r_zero), color="black", lw=3.0, ls="-", alpha=0.95)
+
+    # SE band omitted: we plot only sample medians (magnitudes)
+
+    # Choose polygon color based on whether this is the overall cohort
+    # or a specific connectivity cluster, matching modality-specific colors.
+    conn_type_for_colors = _infer_conn_type_from_path(save_path)
+    cluster_colors = _cluster_colors_for_conn_type(conn_type_for_colors)
+    if ("Cluster_0" in type_z_score) or ("Cluster 0" in type_z_score):
+        profile_fill_color = cluster_colors["0"] 
+        profile_line_style = "-"
+    elif ("Cluster_1" in type_z_score) or ("Cluster 1" in type_z_score):
+        profile_fill_color = cluster_colors["1"] 
+        profile_line_style = "-"
+    else:
+        profile_fill_color = "black"
+        profile_line_style = ":"
+    # outline only (no filled polygon)
+    ax.plot(angles_closed, med_closed, color=profile_fill_color, lw=2.5, ls=profile_line_style, zorder=3)
+    # markers at the original axes positions (use the radial mapping values)
+    ax.scatter(
+        angles,
+        r_vals,
+        marker="o",
+        s=120,
+        facecolor="white",
+        edgecolor=profile_fill_color,
+        linewidth=1.5,
+        zorder=4,
+    )
+    se_vals = []
+    for var_name in var_order:
+        se_val = se_map.get(var_name)
+        try:
+            se_float = float(se_val)
+        except (TypeError, ValueError):
+            se_float = np.nan
+        if not np.isfinite(se_float) or se_float < 0:
+            se_float = np.nan
+        se_vals.append(se_float)
+    se_vals = np.asarray(se_vals, dtype=float)
+    if np.isfinite(se_vals).any():
+        r_low = med_range + (med - se_vals)
+        r_high = med_range + (med + se_vals)
+        r_low = np.clip(r_low, 0.0, 2.0 * med_range)
+        r_high = np.clip(r_high, 0.0, 2.0 * med_range)
+        r_low = np.minimum(r_low, r_high)
+        r_low_closed = np.concatenate([r_low, r_low[:1]])
+        r_high_closed = np.concatenate([r_high, r_high[:1]])
+        r_low_masked = np.ma.masked_invalid(r_low_closed)
+        r_high_masked = np.ma.masked_invalid(r_high_closed)
+        ax.fill_between(
+            angles_closed,
+            r_low_masked,
+            r_high_masked,
+            color=profile_fill_color,
+            alpha=0.30,
+            zorder=1,
+            linewidth=0,
+        )
+
+    # -----------------------------
+    # Labels & Axis Formatting
+    # -----------------------------
+    # Axis labels: pretty variable names only (no significance stars)
+    xticklabels = [_pretty_label(v) for v in var_order]
+
+    ax.set_xticks(angles)
+
+    # Enlarged axis labels and fixed padding so labels do not
+    # shift with data magnitude and stay outside the radar boundary.
+    ax.set_xticklabels(xticklabels, fontsize=20)
+    ax.tick_params(axis="x", pad=30)
+
+    # Radial ticks: fixed count and fixed range for consistent interpretation across plots
+    tick_step = 0.10
+    tick_meds = np.round(
+        np.arange(fixed_min, fixed_max + tick_step * 0.5, tick_step),
+        2,
+    )
+    # Corresponding radial tick positions via r = med_range + med
+    tick_radii = med_range + tick_meds
+    ax.set_yticks(tick_radii)
+
+    def _format_radial_tick(t_med: float) -> str:
+        if abs(t_med) < 1e-8:
+            return "0.00"
+        return f"{t_med:.2f}"
+
+    ax.set_yticklabels([_format_radial_tick(t) for t in tick_meds], fontsize=12)
+
+    # Set radial limits to the fixed range (no extra outer padding)
+    ax.set_ylim(0.0, 2.0 * med_range)
+
+    # Add legend entry describing the zero-median line
+    try:
+        from matplotlib.lines import Line2D as _Line2D
+        from matplotlib.patches import Patch as _Patch
+        legend_handles = [
+            _Line2D([], [], color="black", lw=3.0, label="Zero median (control median)"),
+        ]
+        legend_handles.append(
+            _Patch(facecolor=profile_fill_color, alpha=0.30, label="Median ± SE band")
+        )
+        ax.legend(handles=legend_handles, loc="upper right", bbox_to_anchor=(1.15, 1.05))
+    except Exception:
+        pass
+
+    # Remove radial axis label as requested
+    ax.set_ylabel("")
+
+    ax.set_title(
+        overall_title,
+        fontsize=18,
+        fontweight="bold",
+        pad=30,
+    )
+    ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        print(f"\nFigure saved to: {save_path}")
+
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Connectivity-type overlays: overall vs Cluster 0 vs Cluster 1
+    # ------------------------------------------------------------------
+    # We use the calls to plot_z_scores for the overall cohort and for
+    # each connectivity-specific cluster subset to assemble overlaid
+    # radar figures for functional, structural, and sfc connectivity.
+    if save_path is None:
+        return
+
+    base_name = os.path.basename(save_path)
+    # Determine base kind ('task' or 'domain') from type_z_score
+    base_kind = "task" if type_z_score.startswith("task") else (
+        "domain" if type_z_score.startswith("domain") else None
+    )
+    if base_kind is None:
+        return
+
+    # Derive depression_codes from filename prefix (e.g. 'F32_...')
+    if "_" in base_name:
+        depression_codes = base_name.split("_", 1)[0]
+    else:
+        depression_codes = "unknown"
+
+    key = (depression_codes, association_type, base_kind)
+    store = _RADAR_OVERLAY_STORE.setdefault(
+        key,
+        {"overall": {}, "functional": {}, "structural": {}, "sfc": {}, "_paths": {}}
+    )
+
+    # Map current medians into a name->value dict (absolute magnitudes)
+    # Store signed medians (not magnitudes) so overlays can preserve directionality
+    med_mag_map = {v: float(med_signed.get(v, np.nan)) for v in z_vars}
+
+    # Detect overall vs cluster-specific vs subset calls from save_path
+    is_cluster_call = "_Cluster_0" in base_name or "_Cluster_1" in base_name
+    is_subset_call = "identical_labels" in base_name or "different_labels" in base_name
+
+    # Overall call: base figure in PLOTS_DIR (no cluster / subset suffix)
+    if (not is_cluster_call) and (not is_subset_call) and "schaefer1000+tian54" not in save_path:
+        store["overall"] = med_mag_map
+        _RADAR_OVERLAY_SE_OVERALL[key] = {k: float(v) for k, v in se_map.items() if np.isfinite(v)}
+        return
+
+    # Cluster-specific calls: paths live under .../schaefer1000+tian54/{conn_type}_con/
+    if not is_cluster_call:
+        return
+
+    conn_dir = os.path.basename(os.path.dirname(save_path))  # e.g. 'functional_con'
+    if conn_dir.startswith("functional"):
+        conn_type = "functional"
+    elif conn_dir.startswith("structural"):
+        conn_type = "structural"
+    elif conn_dir.startswith("sfc"):
+        conn_type = "sfc"
+    else:
+        return
+
+    cluster_label = None
+    if "Cluster_0" in base_name:
+        cluster_label = "Cluster 0"
+    elif "Cluster_1" in base_name:
+        cluster_label = "Cluster 1"
+    if cluster_label is None:
+        return
+
+    conn_store = store.setdefault(conn_type, {})
+    conn_store[cluster_label] = med_mag_map
+    store.setdefault("_paths", {})[conn_type] = save_path
+    _RADAR_OVERLAY_SE_CLUSTER.setdefault(key, {}).setdefault(conn_type, {})[cluster_label] = {
+        k: float(v) for k, v in se_map.items() if np.isfinite(v)
+    }
+
+    # If we do not yet have overall + both clusters, defer overlay
+    if not store["overall"] or "Cluster 0" not in conn_store or "Cluster 1" not in conn_store:
+        return
+
+    _render_connectivity_overlay(key, conn_type)
+
+def register_radar_overlay_significance(
+    depression_codes: str,
+    association_type: str,
+    base_kind: str,
+    conn_type: str,
+    variable_names: Sequence[str],
+    pvals_corrected: Sequence[float],
+    comparison_label: str,
+) -> None:
+    """Register between-cluster p-values for overlay radarplot annotations.
+
+    The function stores corrected p-values for variables under the
+    module-level overlay registry and triggers an attempt to render the
+    overlay figure. The expected key format is ``(depression_codes,
+    association_type, base_kind)`` where ``base_kind`` is ``'task'`` or
+    ``'domain'``. P-values are stored per connectivity type.
+    """
+    key = (str(depression_codes), str(association_type), str(base_kind))
+    conn = str(conn_type)
+
+    pval_map: Dict[str, float] = {}
+    for name, pval in zip(variable_names, pvals_corrected):
+        try:
+            pval_map[str(name)] = float(pval)
+        except Exception:
+            continue
+
+    _RADAR_OVERLAY_PVALS.setdefault(key, {})[conn] = pval_map
+    _RADAR_OVERLAY_PVALS_META.setdefault(key, {})[conn] = str(comparison_label)
+
+    try:
+        _render_connectivity_overlay(key, conn)
+    except Exception:
+        pass
+
+
+def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str) -> None:
+    """Render overlay radar plot for a connectivity type, including significance annotations.
+
+    Parameters
+    ----------
+    key : Tuple[str, str, str]
+        A tuple describing the plot context: ``(depression_codes,
+        association_type, base_kind)`` where ``base_kind`` is typically
+        ``'task'`` or ``'domain'``. This key must be present in the
+        module-level ``_RADAR_OVERLAY_STORE`` and associated maps.
+    conn_type : str
+        Connectivity type string (``'functional'``, ``'structural'``,
+        or ``'sfc'``).
+
+    Notes
+    -----
+    - This function is stateful: it expects prior calls to
+      :func:`plot_z_scores` (to populate overall and cluster-specific
+      profiles) and to :func:`register_radar_overlay_significance`
+      (to populate p-value maps). If prerequisites are not met the
+      function returns silently.
+    - The function writes an overlaid PNG to the plots directory
+      inferred from the stored save paths and prints the saved path on
+      success. Failures to save are caught and printed.
+    """
+    if key not in _RADAR_OVERLAY_STORE:
+        return
+
+    store = _RADAR_OVERLAY_STORE.get(key, {})
+    conn_store = store.get(conn_type, {})
+    if not store.get("overall") or "Cluster 0" not in conn_store or "Cluster 1" not in conn_store:
+        return
+
+    depression_codes, association_type, base_kind = key
+
+    def _pretty_label(v: str) -> str:
+        base = v[:-2] if v.endswith("_z") else v
+        return base.replace("_", " ")
+
+    var_names = sorted(store["overall"].keys(), key=lambda v: _pretty_label(v).lower())
+    n = len(var_names)
+    if n < 3:
+        return
+
+    angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    angles_closed = np.concatenate([angles, angles[:1]])
+
+    def _profile_closed(profile_map: Dict[str, float]) -> np.ndarray:
+        arr = np.asarray([profile_map.get(v, np.nan) for v in var_names], dtype=float)
+        return np.concatenate([arr, arr[:1]])
+
+    # Extract signed profiles (may contain NaNs)
+    overall_signed = _profile_closed(store["overall"])  # signed medians
+    c0_signed = _profile_closed(conn_store.get("Cluster 0", {}))
+    c1_signed = _profile_closed(conn_store.get("Cluster 1", {}))
+
+    # Use fixed nominal tick range, but grow med_range if data exceed it so nothing is clipped
+    fixed_min = -0.70
+    fixed_max = 0.70
+    overall_se = _RADAR_OVERLAY_SE_OVERALL.get(key, {})
+    cluster_se = _RADAR_OVERLAY_SE_CLUSTER.get(key, {}).get(conn_type, {})
+
+    def _max_abs_with_se(profile: np.ndarray, se_map: Dict[str, float]) -> float:
+        prof = np.asarray(profile, dtype=float)
+        se_vals = []
+        for var_name in var_names:
+            se_val = se_map.get(var_name)
+            try:
+                se_float = float(se_val)
+            except (TypeError, ValueError):
+                se_float = 0.0
+            if not np.isfinite(se_float) or se_float < 0:
+                se_float = 0.0
+            se_vals.append(se_float)
+        se_vals = np.asarray(se_vals, dtype=float)
+        target_len = len(var_names)
+        if prof.size < target_len:
+            pad = np.full(target_len - prof.size, np.nan)
+            prof = np.concatenate([prof, pad])
+        elif prof.size > target_len:
+            prof = prof[:target_len]
+        vals = np.abs(prof) + se_vals
+        return float(np.nanmax(vals)) if vals.size else np.nan
+
+    # compute maximum absolute median across all three profiles (including SEs)
+    all_vals = np.concatenate([overall_signed, c0_signed, c1_signed])
+    all_abs = np.nanmax(np.abs(all_vals))
+    overall_max = _max_abs_with_se(overall_signed, overall_se) if overall_se else np.nan
+    c0_max = _max_abs_with_se(c0_signed, cluster_se.get("Cluster 0", {})) if cluster_se else np.nan
+    c1_max = _max_abs_with_se(c1_signed, cluster_se.get("Cluster 1", {})) if cluster_se else np.nan
+    range_candidate = all_abs
+    for cand in (overall_max, c0_max, c1_max):
+        if np.isfinite(cand):
+            range_candidate = max(range_candidate, cand)
+    med_range = float(max(fixed_max, range_candidate if np.isfinite(range_candidate) else fixed_max))
+
+    def _to_radial(arr_signed: np.ndarray) -> np.ndarray:
+        return med_range + arr_signed
+
+    overall_closed = _to_radial(overall_signed)
+    c0_closed = _to_radial(c0_signed)
+    c1_closed = _to_radial(c1_signed)
+
+    pval_map = _RADAR_OVERLAY_PVALS.get(key, {}).get(conn_type, {})
+    comparison_label = _RADAR_OVERLAY_PVALS_META.get(key, {}).get(conn_type)
+    overall_se = _RADAR_OVERLAY_SE_OVERALL.get(key, {})
+    cluster_se = _RADAR_OVERLAY_SE_CLUSTER.get(key, {}).get(conn_type, {})
+
+    def _sig_marker(p: float) -> str:
+        if p is None or not np.isfinite(p):
+            return r"$\mathit{ns}$"
+        if p < 0.001:
+            return "***"
+        if p < 0.01:
+            return "**"
+        if p < 0.05:
+            return "*"
+        return r"$\mathit{ns}$"
+
+    xticklabels = []
+    for v in var_names:
+        marker = _sig_marker(pval_map.get(v, np.nan))
+        xticklabels.append(f"{_pretty_label(v)} {marker}")
+
+    fig = plt.figure(figsize=(16, 16))
+    ax = fig.add_subplot(111, polar=True)
+
+    # Reference ring at zero-median level (smooth circle) - thicker solid line
+    r_zero = med_range
+    theta_dense = np.linspace(0.0, 2 * np.pi, 720)
+    # Background shading: smooth gradient (faint at 0-line, stronger outward)
+    min_alpha = 0.04
+    max_alpha = 0.30
+    theta_edges = np.linspace(0.0, 2 * np.pi, 361)
+    # Red region: 0 -> r_zero
+    r_edges_red = np.linspace(0.0, r_zero, 256)
+    r_mid_red = 0.5 * (r_edges_red[:-1] + r_edges_red[1:])
+    dist_red = (r_zero - r_mid_red) / max(r_zero, 1e-8)
+    alpha_red = min_alpha + (max_alpha - min_alpha) * dist_red
+    rgba_red = np.zeros((len(r_mid_red), len(theta_edges) - 1, 4))
+    rgba_red[..., 0] = 0xb2 / 255.0
+    rgba_red[..., 1] = 0x18 / 255.0
+    rgba_red[..., 2] = 0x2b / 255.0
+    rgba_red[..., 3] = alpha_red[:, None]
+    ax.pcolormesh(theta_edges, r_edges_red, rgba_red, shading="auto", zorder=0)
+    # Green region: r_zero -> r_max
+    r_max = 2.0 * med_range
+    r_edges_green = np.linspace(r_zero, r_max, 256)
+    r_mid_green = 0.5 * (r_edges_green[:-1] + r_edges_green[1:])
+    dist_green = (r_mid_green - r_zero) / max(r_max - r_zero, 1e-8)
+    alpha_green = min_alpha + (max_alpha - min_alpha) * dist_green
+    rgba_green = np.zeros((len(r_mid_green), len(theta_edges) - 1, 4))
+    rgba_green[..., 0] = 0x00 / 255.0
+    rgba_green[..., 1] = 0x6d / 255.0
+    rgba_green[..., 2] = 0x2c / 255.0
+    rgba_green[..., 3] = alpha_green[:, None]
+    ax.pcolormesh(theta_edges, r_edges_green, rgba_green, shading="auto", zorder=0)
+    ax.plot(theta_dense, np.full_like(theta_dense, r_zero), color="black", lw=3.0, ls="-", alpha=0.95)
+
+    cluster_colors = _cluster_colors_for_conn_type(conn_type)
+    colors = [
+        "black",
+        cluster_colors["0"],
+        cluster_colors["1"] 
+    ]
+    line_styles = [":", "-", "-"]
+    labels = ["Overall Depression", "Cluster 0", "Cluster 1"]
+    polys = [overall_closed, c0_closed, c1_closed]
+    alphas = [0.45, 0.35, 0.35]
+    lws = [2.5, 2.0, 2.0]
+
+    for poly, col, lab, a, lw_, ls_ in zip(polys, colors, labels, alphas, lws, line_styles):
+        # outline only (no filled polygon)
+        ax.plot(angles_closed, poly, color=col, lw=lw_, ls=ls_, zorder=3)
+        ax.scatter(angles, poly[:-1], marker='o', s=80, facecolor='white', edgecolor=col, linewidth=1.5, zorder=4)
+
+    def _build_se_band(se_map: Dict[str, float], profile_vals: np.ndarray, color: str, alpha: float) -> None:
+        se_vals = []
+        for var_name in var_names:
+            se_val = se_map.get(var_name)
+            try:
+                se_float = float(se_val)
+            except (TypeError, ValueError):
+                se_float = np.nan
+            if not np.isfinite(se_float) or se_float < 0:
+                se_float = np.nan
+            se_vals.append(se_float)
+        se_vals = np.asarray(se_vals, dtype=float)
+        profile_arr = np.asarray(profile_vals, dtype=float)
+        target_len = len(var_names)
+        if profile_arr.size < target_len:
+            pad = np.full(target_len - profile_arr.size, np.nan)
+            profile_arr = np.concatenate([profile_arr, pad])
+        elif profile_arr.size > target_len:
+            profile_arr = profile_arr[:target_len]
+        r_low = med_range + (profile_arr - se_vals)
+        r_high = med_range + (profile_arr + se_vals)
+        r_low = np.clip(r_low, 0.0, 2.0 * med_range)
+        r_high = np.clip(r_high, 0.0, 2.0 * med_range)
+        r_low = np.minimum(r_low, r_high)
+        r_low_closed = np.concatenate([r_low, r_low[:1]])
+        r_high_closed = np.concatenate([r_high, r_high[:1]])
+        r_low_masked = np.ma.masked_invalid(r_low_closed)
+        r_high_masked = np.ma.masked_invalid(r_high_closed)
+        ax.fill_between(
+            angles_closed,
+            r_low_masked,
+            r_high_masked,
+            color=color,
+            alpha=alpha,
+            zorder=1,
+            linewidth=0,
+        )
+
+    if overall_se:
+        _build_se_band(overall_se, overall_signed, "black", 0.30)
+    if cluster_se:
+        c0_se = cluster_se.get("Cluster 0", {})
+        c1_se = cluster_se.get("Cluster 1", {})
+        if c0_se:
+            _build_se_band(c0_se, c0_signed, colors[1], 0.30)
+        if c1_se:
+            _build_se_band(c1_se, c1_signed, colors[2], 0.30)
+
+    ax.set_xticks(angles)
+    ax.set_xticklabels(xticklabels, fontsize=12)
+    ax.tick_params(axis="x", pad=20)
+
+    # Radial ticks: fixed count and fixed range for consistent interpretation across plots
+    tick_step = 0.10
+    tick_meds = np.round(
+        np.arange(fixed_min, fixed_max + tick_step * 0.5, tick_step),
+        2,
+    )
+    tick_radii = med_range + tick_meds
+    ax.set_yticks(tick_radii)
+
+    def _format_radial_tick_overlay(t_med: float) -> str:
+        if abs(t_med) < 1e-8:
+            return "0.00"
+        return f"{t_med:.2f}"
+
+    ax.set_yticklabels([_format_radial_tick_overlay(t) for t in tick_meds], fontsize=10)
+    ax.set_ylim(0.0, 2.0 * med_range)
+
+    if conn_type == "functional":
+        title_conn = "functional"
+    elif conn_type == "structural":
+        title_conn = "structural"
+    else:
+        title_conn = "sfc"
+    ax.set_title(
+        f"Z-Score Radar ({base_kind}, {title_conn} connectivity): Overall vs Clusters",
+        fontsize=14,
+        fontweight="bold",
+        pad=20,
+    )
+    ax.grid(color="gray", linestyle="--", linewidth=0.5, alpha=0.7)
+
+    from matplotlib.patches import Patch as _Patch
+    from matplotlib.lines import Line2D as _Line2D
+
+    legend_handles = [
+        _Line2D([], [], color="black", lw=2.5, ls=":", label="Overall Depression"),
+        _Patch(color=colors[1], label=labels[1]),
+        _Patch(color=colors[2], label=labels[2]),
+    ]
+    if overall_se:
+        legend_handles.append(_Patch(facecolor="black", alpha=0.20, label="Overall median ± SE"))
+    if cluster_se:
+        if cluster_se.get("Cluster 0"):
+            legend_handles.append(_Patch(facecolor=colors[1], alpha=0.18, label="Cluster 0 median ± SE"))
+        if cluster_se.get("Cluster 1"):
+            legend_handles.append(_Patch(facecolor=colors[2], alpha=0.18, label="Cluster 1 median ± SE"))
+    # add zero-line legend entry (4th)
+    legend_handles.append(_Line2D([], [], color="black", lw=3.0, label="Zero median (control median)"))
+    if comparison_label:
+        legend_handles.append(_Line2D([], [], color="none", label=f"Significance: {comparison_label}"))
+    ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.05, 1.02), frameon=True)
+
+    if base_kind == "task":
+        out_name = f"{depression_codes}_{association_type}_task_z_scores_{conn_type}_overall_vs_clusters.png"
+    else:
+        out_name = f"{depression_codes}_{association_type}_domain_z_scores_{conn_type}_overall_vs_clusters.png"
+
+    save_path = store.get("_paths", {}).get(conn_type)
+    if not save_path:
+        return
+
+    cluster_con_dir = os.path.dirname(save_path)
+    cluster_base_dir = os.path.dirname(cluster_con_dir)
+    plots_dir = os.path.dirname(cluster_base_dir)
+
+    out_path = os.path.join(plots_dir, out_name)
+    fig.subplots_adjust(right=0.80)
+    try:
+        plt.savefig(out_path, dpi=300, bbox_inches="tight", format="png")
+        print(f"Overlaid connectivity radar figure saved to: {out_path}")
+    except Exception as exc:
+        print(f"Failed to save overlaid connectivity radar figure {out_path}: {exc}")
+    plt.close(fig)
+
+
+def plot_conn_cognition_association(
+    data: pd.DataFrame,
+    connectivity_var: str,
+    cognitive_vars: Union[str, List[str]],
+    save_path: Optional[str] = None,
+    group_column: Optional[str] = None,
+    overall_title: Optional[str] = None,
+) -> None:
+    """Plot scatter subplots of connectivity vs cognition with regression lines per group.
+
+    This helper min-max scales the connectivity variable to [0, 1] and
+    fits median (50th percentile) regression lines using
+    :class:`statsmodels.QuantReg`; when Quantile regression fails the
+    code falls back to an ordinary least-squares line via
+    ``numpy.polyfit``. Regression fits use conservative iteration
+    settings to promote convergence for large datasets.
+
+    Side effects
+    ------------
+    - Saves the figure to ``save_path`` when provided and prints the
+      saved path.
+    - Clustering/connection type inference for colors is heuristic and
+      is based on the provided ``save_path`` (if any) or the
+      ``connectivity_var`` name.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input data containing connectivity and cognitive variables.
+    connectivity_var : str
+        Name of connectivity variable (x-axis). Will be min-max scaled to [0, 1].
+    cognitive_vars : str or List[str]
+        Name(s) of cognitive variable(s) (y-axis). If a single string is provided,
+        a single subplot is created. If a list is provided, subplots are arranged
+        in a grid (n_cols = min(3, len(cognitive_vars))).
+    save_path : str, optional
+        Path to save the figure.
+    group_column : str, optional
+        Column name for group labels. If provided, points are colored by group
+        and separate regression lines are drawn. If None, all points are colored
+        uniformly and a single overall regression line is drawn.
+    overall_title : str, optional
+        Title for the entire figure. If None, a default title is generated.
+    """
+    from sklearn.preprocessing import MinMaxScaler
+    
+    # Normalize cognitive_vars to list
+    if isinstance(cognitive_vars, str):
+        cognitive_vars = [cognitive_vars]
+    
+    # Validate all variables exist
+    if connectivity_var not in data.columns:
+        print(f"Warning: Connectivity variable '{connectivity_var}' not found in data")
+        return
+    
+    missing_cogs = [v for v in cognitive_vars if v not in data.columns]
+    if missing_cogs:
+        print(f"Warning: Missing cognitive variables: {missing_cogs}")
+        cognitive_vars = [v for v in cognitive_vars if v in data.columns]
+    
+    if not cognitive_vars:
+        print("No valid cognitive variables to plot")
+        return
+    
+    conn_type_for_colors = _infer_conn_type_from_path(save_path)
+    if conn_type_for_colors is None:
+        conn_label = str(connectivity_var).lower()
+        if "functional" in conn_label:
+            conn_type_for_colors = "functional"
+        elif "structural" in conn_label:
+            conn_type_for_colors = "structural"
+        elif "sfc" in conn_label:
+            conn_type_for_colors = "sfc"
+    cluster_colors = _cluster_colors_for_conn_type(conn_type_for_colors)
+    group_colors = {
+        'Control': "#2ca02c",
+        'Depression': "#6a3d9a",
+        'Cluster 0': cluster_colors["0"],
+        'Cluster 1': cluster_colors["1"] 
+    }
+    
+    # Determine subplot layout
+    n_plots = len(cognitive_vars)
+    n_cols = min(3, n_plots)
+    n_rows = (n_plots + n_cols - 1) // n_cols
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
+    
+    # Ensure axes is always 2D array for consistency
+    if n_plots == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = axes.reshape(1, -1)
+    else:
+        axes = axes.reshape(n_rows, n_cols)
+    
+    # Min-max scale connectivity variable to [0, 1]
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    x_all_values = data[connectivity_var].values.reshape(-1, 1)
+    x_all_scaled = scaler.fit_transform(x_all_values).flatten()
+    x_all = pd.Series(x_all_scaled, index=data.index)
+    
+    for idx, cognitive_var in enumerate(cognitive_vars):
+        row = idx // n_cols
+        col = idx % n_cols
+        ax = axes[row, col]
+        
+        y_all = data[cognitive_var]
+        
+        if group_column and group_column in data.columns:
+            # Plot points grouped by color
+            groups = sorted(data[group_column].unique())
+            for group in groups:
+                mask = data[group_column] == group
+                x_group = x_all[mask]
+                y_group = data.loc[mask, cognitive_var]
+                color = group_colors.get(str(group), 'gray')
+                ax.scatter(x_group, y_group, alpha=0.6, edgecolor='k', linewidth=0.5,
+                          color=color, label=str(group), s=40)
+            
+            # Draw overall median (50th percentile) regression line (all points) - more transparent
+            valid_mask = np.isfinite(x_all) & np.isfinite(y_all)
+            x_valid = x_all[valid_mask].values
+            y_valid = y_all[valid_mask].values
+            if len(x_valid) >= 2:
+                x_vals_all = np.array([x_valid.min(), x_valid.max()])
+                try:
+                    X_all = sm.add_constant(x_valid, has_constant='add')
+                    model_all = sm.QuantReg(y_valid, X_all)
+                    res_all = model_all.fit(q=0.5, max_iter=10000, p_tol=1e-8)
+                    intercept_all, slope_all = res_all.params
+                    y_vals_all = intercept_all + slope_all * x_vals_all
+                except Exception:
+                    slope_all, intercept_all = np.polyfit(x_valid, y_valid, 1)
+                    y_vals_all = intercept_all + slope_all * x_vals_all
+                ax.plot(x_vals_all, y_vals_all, color='black', lw=2, linestyle='--', 
+                       alpha=0.4, label=f'Overall (median): y={slope_all:.3f}x+{intercept_all:.3f}', zorder=10)
+            
+            # Draw median (50th percentile) regression lines for each group
+            for group in groups:
+                mask = data[group_column] == group
+                x_group = x_all[mask]
+                y_group = data.loc[mask, cognitive_var]
+                valid = np.isfinite(x_group) & np.isfinite(y_group)
+                x_g = x_group[valid].values
+                y_g = y_group[valid].values
+                
+                if len(x_g) >= 2:
+                    x_vals_g = np.array([x_g.min(), x_g.max()])
+                    try:
+                        X_g = sm.add_constant(x_g, has_constant='add')
+                        model_g = sm.QuantReg(y_g, X_g)
+                        res_g = model_g.fit(q=0.5, max_iter=10000, p_tol=1e-8)
+                        intercept_g, slope_g = res_g.params
+                        y_vals_g = intercept_g + slope_g * x_vals_g
+                    except Exception:
+                        slope_g, intercept_g = np.polyfit(x_g, y_g, 1)
+                        y_vals_g = intercept_g + slope_g * x_vals_g
+                    color = group_colors.get(str(group), 'gray')
+                    ax.plot(x_vals_g, y_vals_g, color=color, lw=2,
+                           label=f'{group} (median): y={slope_g:.3f}x+{intercept_g:.3f}', zorder=9)
+        else:
+            # All points same color, single regression line
+            ax.scatter(x_all, y_all, alpha=0.6, edgecolor='k', color='steelblue', s=40)
+            valid_mask = np.isfinite(x_all) & np.isfinite(y_all)
+            x_valid = x_all[valid_mask].values
+            y_valid = y_all[valid_mask].values
+            if len(x_valid) >= 2:
+                x_vals = np.array([x_valid.min(), x_valid.max()])
+                try:
+                    X_vals = sm.add_constant(x_valid, has_constant='add')
+                    model = sm.QuantReg(y_valid, X_vals)
+                    res = model.fit(q=0.5, max_iter=10000, p_tol=1e-8)
+                    intercept, slope = res.params
+                    y_vals = intercept + slope * x_vals
+                except Exception:
+                    slope, intercept = np.polyfit(x_valid, y_valid, 1)
+                    y_vals = intercept + slope * x_vals
+                ax.plot(x_vals, y_vals, color='red', lw=2, 
+                       label=f'Median fit: y={slope:.3f}x+{intercept:.3f}')
+        
+        ax.set_xlabel(connectivity_var.replace("_", " ").title() + " (scaled [0,1])", fontsize=10)
+        ax.set_ylabel(cognitive_var.replace("_", " ").title(), fontsize=10)
+        ax.set_title(f"{cognitive_var.replace('_', ' ').title()}", fontsize=11, fontweight='bold')
+        ax.legend(fontsize=8, loc='best')
+        ax.grid(alpha=0.3)
+    
+    # Hide empty subplots
+    for idx in range(n_plots, n_rows * n_cols):
+        row = idx // n_cols
+        col = idx % n_cols
+        axes[row, col].set_visible(False)
+    
+    if overall_title:
+        fig.suptitle(overall_title, fontsize=14, fontweight='bold', y=1.00)
+    else:
+        fig.suptitle(f"{connectivity_var.replace('_', ' ').title()} vs Cognitive Variables", 
+                    fontsize=14, fontweight='bold', y=1.00)
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        print(f"Scatter plot grid saved to: {save_path}")
+    
+    plt.close()
+
