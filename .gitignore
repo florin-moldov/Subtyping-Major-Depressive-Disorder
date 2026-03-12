@@ -1,0 +1,16 @@
+# Python bytecode (compiled files)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+.neurovenv/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment variables (Sensitive Data!)
+.env
+
+# All of the data (all data is UKB data, which cannot be shared)
+data/
