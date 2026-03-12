@@ -7,6 +7,9 @@ This repository contains code (Python scripts within *source_code/* and Jupyter 
 
 - *source_code/*: Python scripts that contain functions used in the notebooks. These scripts are organized by analysis type (e.g., global clustering, module clustering) and include both main scripts for running the analyses and utility scripts for supporting functions.
 
+## Blogpost
+Contains a blogpost written in Dutch (.pdf and .html formats) that provides a non-technical summary of the paper and its findings, intended for a general audience. The blogpost is designed to be accessible to readers without a background in neuroscience or data science, and it highlights the key insights and implications of the research in an engaging and informative way. The blogpost is included in the repository to facilitate broader dissemination and understanding of the research findings among the general public, and to provide a resource for those interested in learning more about the study without needing to engage with the technical details of the analyses.
+
 ## Notebooks
 
 ### `00_initial_cohort_selection.ipynb`
