@@ -11,7 +11,7 @@ Additionally, the repository includes:
 
 - *blogpost/*: A blogpost written in Dutch (.pdf and .html formats).
 
-- *gitignore*: A file that specifies intentionally untracked files to ignore.
+- *.gitignore*: A file that specifies intentionally untracked files to ignore.
 
 - *requirements.txt*: A file that lists the Python dependencies for the project.
 
