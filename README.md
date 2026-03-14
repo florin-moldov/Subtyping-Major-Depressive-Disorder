@@ -18,7 +18,7 @@ Additionally, the repository includes:
 - *requirements.txt*: A file that lists the Python dependencies for the project.
 
 ## Blogpost
-Contains a blogpost written in Dutch (.pdf and .html formats) that provides a non-technical summary of the paper and its findings, intended for a general audience. The blogpost is designed to be accessible to readers without a background in neuroscience or data science, and it highlights the key insights and implications of the research in an engaging and informative way. The blogpost is included in the repository to facilitate broader dissemination and understanding of the research findings among the general public, and to provide a resource for those interested in learning more about the study without needing to engage with the technical details of the analyses.
+Contains a blogpost written in Dutch (.pdf and .html formats) that provides a non-technical summary of the paper and its findings, intended for a general (Dutch-speaking) audience. The blogpost is designed to be accessible to readers without a background in neuroscience or data science, and it highlights the key insights and implications of the research in an engaging and informative way. The blogpost is included in the repository to facilitate broader dissemination and understanding of the research findings among the general public, and to provide a resource for those interested in learning more about the study without needing to engage with the technical details of the analyses.
 
 ## Notebooks
 
