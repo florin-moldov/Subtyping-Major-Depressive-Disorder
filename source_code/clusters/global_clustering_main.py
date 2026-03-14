@@ -209,9 +209,9 @@ CLUSTER_COL = 'Cluster'
 GROUP_COL = 'Group'
 
 # Bootstrap iterations for quantile regression (R) standard errors and confidence intervals
-QUANTILE_REGRESSION_BOOTSTRAP_R = 1000
+QUANTILE_REGRESSION_BOOTSTRAP_R = 5000
 # Bootstrap iterations for clustering stability analysis
-CLUSTER_STABILITY_BOOTSTRAP_ITER = 500
+CLUSTER_STABILITY_BOOTSTRAP_ITER = 5000
 
 # ==============================================================================
 # OUTPUT CAPTURE SETUP

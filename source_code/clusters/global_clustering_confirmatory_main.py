@@ -221,7 +221,7 @@ def run_pipeline_for_conn_type(conn_type, cohort_data):
 
   general_log_path = os.path.join(DEPRESSION_DIR, f'global_{conn_type}_connectivity_output_sfc_clusters.txt')
   fdr_log_path = os.path.join(DEPRESSION_DIR, f'global_{conn_type}_connectivity_FDR_sfc_clusters.txt')
-  motion_columns = get_motion_columns(conn_type)
+  motion_columns = get_motion_columns(conn_type, fMRI_MOTION_METRIC, dMRI_MOTION_METRIC)
 
   display_conn = "Structure-Function Coupling" if str(conn_type).lower() == "sfc" else str(conn_type).upper()
   print(f"\n{'='*80}")

@@ -146,9 +146,9 @@ COMMUNITY_LABELS_PATH = '.../notebooks/CM.txt'
 ATLAS_FILE = '.../Schaefer1000_TianS4_combined.nii.gz'
 
 # Bootstrap iterations for quantile regression (R) standard errors and confidence intervals
-QUANTILE_REGRESSION_BOOTSTRAP_R = 1000
+QUANTILE_REGRESSION_BOOTSTRAP_R = 5000
 # Bootstrap iterations for clustering stability analysis
-CLUSTER_STABILITY_BOOTSTRAP_ITER = 500
+CLUSTER_STABILITY_BOOTSTRAP_ITER = 5000
 
 # ==============================================================================
 # OUTPUT CAPTURE SETUP

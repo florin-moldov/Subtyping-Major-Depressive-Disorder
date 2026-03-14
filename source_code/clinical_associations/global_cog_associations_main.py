@@ -112,7 +112,7 @@ def main():
         } 
     
     # Bootstrap iterations for quantile regression (R) standard errors and confidence intervals
-    QUANTILE_REGRESSION_BOOTSTRAP_R = 1000
+    QUANTILE_REGRESSION_BOOTSTRAP_R = 5000
 
     # -------------------------------------------------------------------------
     # Step 1: Initializing R environment once

@@ -106,7 +106,7 @@ mods = np.unique(CM)
 ATLAS_FILE = '.../Schaefer1000_TianS4_combined.nii.gz'
 
 # Bootstrap iterations for quantile regression (R) standard errors and confidence intervals
-QUANTILE_REGRESSION_BOOTSTRAP_R = 1000
+QUANTILE_REGRESSION_BOOTSTRAP_R = 5000
 
 # Cluster column within DATA for which we want to confirmatory check associations with all 
 # module-level features. This should be a column in the DATA CSV that contains cluster labels
