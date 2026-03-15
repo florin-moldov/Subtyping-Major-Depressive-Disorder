@@ -125,8 +125,32 @@ def execute_edge_associations_for_conn_type(conn_type, cohort_data, edge_covaria
     for cov in edge_covariates:
         print(f"  Covariate: {cov}")
         if cov == 'motion':
-            cov = list(motion_columns.keys()) # because only one motion metric stored per modality
-            print(f"    Using motion metric: {cov}")
+            motion_labels = list(motion_columns.keys())
+            print(f"    Using motion metrics: {motion_labels}")
+            for motion_label in motion_labels:
+                control_corr_map = results[f'{motion_label}_ctrl_map']
+                depression_corr_map = results[f'{motion_label}_dep_map']
+                count_control, percentage_control, rmin_control, rmax_control, median_r_control = describe_significant_edges(control_corr_map)
+                count_depressed, percentage_depressed, rmin_depressed, rmax_depressed, median_r_depressed = describe_significant_edges(depression_corr_map)
+
+                fname = f"{conn_type}_{motion_label}_edge_association.txt"
+                out_path = os.path.join(GENERAL_DIR, fname)
+                with open(out_path, "w") as txt:
+                    txt.write("conn_type;covariate;cohort;count;percentage;rmin;rmax;median\n")
+                    txt.write(
+                        f"{conn_type};{motion_label};Control;"
+                        f"{int(count_control)};{percentage_control:.2f};"
+                        f"{rmin_control:.3f};{rmax_control:.3f};{median_r_control:.3f}\n"
+                    )
+                    txt.write(
+                        f"{conn_type};{motion_label};Depression;"
+                        f"{int(count_depressed)};{percentage_depressed:.2f};"
+                        f"{rmin_depressed:.3f};{rmax_depressed:.3f};{median_r_depressed:.3f}\n"
+                    )
+
+                print(f"    [{motion_label}] Control cohort: {count_control} significant edges ({percentage_control:.2f}%) / range: [{rmin_control:.3f}, {rmax_control:.3f}], median: {median_r_control:.3f}")
+                print(f"    [{motion_label}] Depression cohort: {count_depressed} significant edges ({percentage_depressed:.2f}%) / range: [{rmin_depressed:.3f}, {rmax_depressed:.3f}], median: {median_r_depressed:.3f}")
+            continue
 
         control_corr_map = results[f'{cov}_ctrl_map']
         depression_corr_map = results[f'{cov}_dep_map']
