@@ -1,3 +1,11 @@
+<p align="center">
+  <img src="https://img.shields.io/badge/github-repo-blue?style=plastic&logo=github" alt="github">
+  <img src="https://img.shields.io/badge/research_project-subtyping_MDD-yellow?style=plastic" alt="research">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=plastic" alt="license">
+  <img src="https://img.shields.io/badge/Python-purple?style=plastic" alt="python">
+  <img src="https://img.shields.io/badge/R-orange?style=plastic" alt="R">
+  <img src="https://img.shields.io/badge/status-ongoing-black?style=plastic" alt="status">
+</p>
 
 # Multiscale And Multimodal Subtyping of Major Depressive Disorder: Structure-Function Coupling Underlies Cognitive Heterogeneity
 
@@ -9,7 +17,7 @@ This repository contains code (Python scripts within *source_code/* and Jupyter 
 
 Additionally, the repository includes:
 
-- *blogpost/*: A blogpost written in Dutch (.pdf and .html formats).
+- *blogpost/*: A blog post written in Dutch (.pdf and .html formats).
 
 - *LICENSE*: A file that specifies the terms of use for the code and data in the repository.
 
@@ -18,7 +26,7 @@ Additionally, the repository includes:
 - *requirements.txt*: A file that lists the Python dependencies for the project.
 
 ## Blogpost
-Contains a blogpost written in Dutch (.pdf and .html formats) that provides a non-technical summary of the paper and its findings, intended for a general (Dutch-speaking) audience. The blogpost is designed to be accessible to readers without a background in neuroscience or data science, and it highlights the key insights and implications of the research in an engaging and informative way. The blogpost is included in the repository to facilitate broader dissemination and understanding of the research findings among the general public, and to provide a resource for those interested in learning more about the study without needing to engage with the technical details of the analyses.
+Contains a blog post written in Dutch (.pdf and .html formats) that provides a non-technical summary of the paper and its findings, intended for a general (Dutch-speaking) audience. The blogpost is designed to be accessible to readers without a background in neuroscience or data science, and it highlights the key insights and implications of the research in an engaging and informative way. The blogpost is included in the repository to facilitate broader dissemination and understanding of the research findings among the general public, and to provide a resource for those interested in learning more about the study without needing to engage with the technical details of the analyses.
 
 ## Notebooks
 
@@ -108,7 +116,7 @@ Organized as follows:
 Due to the strict data access and usage policies of the UK Biobank, the actual data used in this project cannot be shared publicly. However, all code necessary to reproduce the analyses and figures in the paper is available in this repository. To run the analyses, you will need to have access to the UK Biobank data and follow the instructions provided in the notebooks for data preparation and analysis. The notebooks are designed to be run sequentially, with each notebook building on the results of the previous ones. If you have any questions or encounter any issues while running the code, please do not hesitate to reach out.
 
 ## Correspondence
-For any questions or inquiries regarding the code or analyses, please contact the corresponding author, Florin Valentin Moldovan, at [florinmoldo22@gmail.com](mailto:florinmoldo22@gmail.com).
+For any questions or inquiries, please contact the corresponding author, Florin Valentin Moldovan, at [florinmoldo22@gmail.com](mailto:florinmoldo22@gmail.com).
 
 ## References
 
