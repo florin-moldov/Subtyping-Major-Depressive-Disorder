@@ -26,8 +26,6 @@ The script is organized into functional sections:
 
 Requirements
 ------------
-- Python packages: numpy, pandas, matplotlib, seaborn, scipy, sklearn,
-    statsmodels, rpy2
 - R (system installation) with package: `quantreg` (the
     module will attempt to install it via R if missing)
 
