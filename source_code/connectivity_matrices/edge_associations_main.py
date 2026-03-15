@@ -53,13 +53,13 @@ from edge_associations_utils import (
 CONNECTIVITY_TYPES = ['functional', 'structural']
 
 # Data paths 
-GENERAL_DIR = '/home/f_moldovan/projects/subtyping_depression/data/UKB/cohorts'
-DEPRESSION_DIR = '/home/f_moldovan/projects/subtyping_depression/data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
-CONTROL_DIR = '/home/f_moldovan/projects/subtyping_depression/data/UKB/control_notask_STRCO_RSSCHA_RSTIA'
-COMBINED_COHORT_PATH = '/home/f_moldovan/projects/subtyping_depression/data/UKB/cohorts/combined_cohort_F32.csv'
-DEPRESSION_COHORT_PATH = '/home/f_moldovan/projects/subtyping_depression/data/UKB/cohorts/depression_cohort_F32.csv'
-HEAD_MOTION_PATH = '/home/f_moldovan/projects/subtyping_depression/data/UKB/head_motion.csv.gz'
-VALIDATION_PLOTS_BASE_DIR = '/home/f_moldovan/projects/subtyping_depression/reports/plots/schaefer1000+tian54'
+GENERAL_DIR = '.../data/UKB/cohorts'
+DEPRESSION_DIR = '.../data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
+CONTROL_DIR = '.../data/UKB/control_notask_STRCO_RSSCHA_RSTIA'
+COMBINED_COHORT_PATH = '.../data/UKB/cohorts/combined_cohort_F32.csv'
+DEPRESSION_COHORT_PATH = '.../data/UKB/cohorts/depression_cohort_F32.csv'
+HEAD_MOTION_PATH = '.../data/UKB/head_motion.csv.gz'
+VALIDATION_PLOTS_BASE_DIR = '.../reports/plots/schaefer1000+tian54'
 
 BATCH_SIZE = int(os.getenv('GC_BATCH_SIZE', '25'))
 
@@ -86,6 +86,7 @@ def execute_edge_associations_for_conn_type(conn_type, cohort_data, edge_covaria
         DEPRESSION_DIR,
         conn_type,
         batch_size=BATCH_SIZE,
+        cache_dir=None, # makes it in /tmp/edge_cache by default, can set to a specific path if desired
         prefix=f"{conn_type}_dep_edges",
         dtype=np.float32,
     )
@@ -94,6 +95,7 @@ def execute_edge_associations_for_conn_type(conn_type, cohort_data, edge_covaria
         CONTROL_DIR,
         conn_type,
         batch_size=BATCH_SIZE,
+        cache_dir=None, # makes it in /tmp/edge_cache by default, can set to a specific path if desired
         prefix=f"{conn_type}_ctrl_edges",
         dtype=np.float32,
     )
@@ -123,7 +125,7 @@ def execute_edge_associations_for_conn_type(conn_type, cohort_data, edge_covaria
     for cov in edge_covariates:
         print(f"  Covariate: {cov}")
         if cov == 'motion':
-            cov = motion_columns.keys() # because only one motion metric stored per modality
+            cov = list(motion_columns.keys()) # because only one motion metric stored per modality
             print(f"    Using motion metric: {cov}")
 
         control_corr_map = results[f'{cov}_ctrl_map']
