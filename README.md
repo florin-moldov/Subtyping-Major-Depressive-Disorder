@@ -46,7 +46,7 @@ Demonstrates how to pull neuroimaging (rfMRI and dMRI) data of preselected subje
 
 A step-by-step explanation of how to merge two integer-labelled NIfTI atlases — one cortical, one subcortical — into a single combined atlas. In our case this has been done for the Schaefer 1000 (Schaefer et al., 2018) and the Tian S4 (Tian et al., 2020) atlases. The process involves loading the atlases, optionally resampling the subcortical atlas to match the cortical grid, calculating label offsets to avoid collisions, merging the label arrays according to a precedence rule, and saving the resulting combined atlas along with an optional CSV label-mapping table. The notebook also handles edge cases such as shape/affine mismatches and missing resampling backends, ensuring robustness throughout the integration process. Optional dependencies for resampling are noted, and debug logging is included to provide insights into the merging process. 
 
-This integrated atlas is used throughout (almost) all subsequent analyses, including the merging and aggregation of rfMRI timeseries in `04_merge_aggregate_rfMRI.ipynb`, the aggregation of dMRI measures in `05_aggregate_dMRI.ipynb`, and the global and module-level clustering analyses in `06_global_clustering.ipynb` and `09_module_clustering.ipynb`, respectively.
+This integrated atlas is used throughout (almost) all subsequent analyses, including the merging and aggregation of rfMRI timeseries in `04_merge_aggregate_rfMRI.ipynb`, the aggregation of dMRI measures in `05_aggregate_dMRI.ipynb`, and the global and module-level clustering analyses in `07_global_clustering.ipynb` and `10_module_clustering.ipynb`, respectively.
 
 ### `04_merge_aggregate_rfMRI.ipynb`
 
