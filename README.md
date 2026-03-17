@@ -16,6 +16,7 @@ This repository contains code (Python scripts within *source_code/* and Jupyter 
 - *source_code/*: Python scripts that contain functions used in the notebooks. These scripts are organized by analysis type (e.g., global clustering, module clustering) and include both main scripts for running the analyses and utility scripts for supporting functions.
 
 Additionally, the repository includes:
+- *atlases/deterministic/*: The original Schaefer 1000 and Tian 54 atlases in NIfTI format (with txt label files) used for the atlas integration, as well as the combined atlas used in many downstream analyses resulting from the integration process described in `03_atlas_integration.ipynb`.
 
 - *blogpost/*: A blog post written in Dutch (.pdf and .html formats).
 
