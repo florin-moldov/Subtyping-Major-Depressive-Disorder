@@ -14,3 +14,6 @@ __pycache__/
 
 # All of the data (all data is UKB data, which cannot be shared)
 data/
+
+# All reports (figures and plots, which are derived from UKB data and also cannot be shared)
+reports/
