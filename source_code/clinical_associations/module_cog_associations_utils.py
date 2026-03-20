@@ -1635,8 +1635,9 @@ def plot_z_scores(
     - Bootstrap standard errors are estimated with a fixed RNG seed for
       reproducibility (5000 resamples by default); this can be adjusted in
       the code if desired.
-    - The function maps medians to radial coordinates using a grow-to-fit
-      nominal range and visualizes median ± SE bands when available.
+        - The function maps medians to radial coordinates using an asymmetric
+            nominal median range ``[-0.70, 0.40]`` (expanded only when data/SE
+            exceed these bounds) and visualizes median ± SE bands when available.
     """
 
     def _pretty_label(v: str) -> str:
@@ -1707,10 +1708,10 @@ def plot_z_scores(
     angles_closed = np.concatenate([angles, angles[:1]])
 
     # -----------------------------
-    # Determine radial mapping using a nominal fixed range but grow-to-fit
+    # Determine radial mapping using nominal fixed bounds but allow grow-to-fit
     # -----------------------------
     fixed_min = -0.70
-    fixed_max = 0.70
+    fixed_max = 0.40
     data_max = float(np.nanmax(np.abs(med))) if med.size > 0 else 0.0
     se_vals_for_range = []
     for var_name in var_order:
@@ -1728,11 +1729,27 @@ def plot_z_scores(
     range_candidate = data_max
     if np.isfinite(med_se_max):
         range_candidate = max(range_candidate, med_se_max)
-    med_range = float(max(fixed_max, range_candidate if np.isfinite(range_candidate) else fixed_max))
+
+    # Asymmetric bounds in median space (respect fixed_min/fixed_max by default,
+    # but expand if data +/- SE exceed them).
+    lower_candidate = np.nanmin(med - se_vals_for_range) if med.size else np.nan
+    upper_candidate = np.nanmax(med + se_vals_for_range) if med.size else np.nan
+    lower_med = float(min(fixed_min, lower_candidate)) if np.isfinite(lower_candidate) else float(fixed_min)
+    upper_med = float(max(fixed_max, upper_candidate)) if np.isfinite(upper_candidate) else float(fixed_max)
+    med_span = upper_med - lower_med
+    if not np.isfinite(med_span) or med_span <= 0:
+        med_span = max(fixed_max - fixed_min, 1.0)
+        lower_med = fixed_min
+        upper_med = fixed_min + med_span
 
     def _to_radial(arr_signed: np.ndarray) -> np.ndarray:
-        # Map signed medians so that 0 maps to radius = med_range
-        return med_range + arr_signed
+        return (np.asarray(arr_signed, dtype=float) - lower_med) / med_span
+
+    def _to_radial_scalar(value: float) -> float:
+        return float((float(value) - lower_med) / med_span)
+
+    def _to_median_scalar(radius: float) -> float:
+        return float(lower_med + float(radius) * med_span)
 
     med_closed = _to_radial(np.concatenate([med, med[:1]]))
 
@@ -1743,35 +1760,8 @@ def plot_z_scores(
     ax = fig.add_subplot(111, polar=True)
 
     # Reference ring at zero-median level (smooth circle) - thicker solid line
-    r_zero = med_range
+    r_zero = _to_radial_scalar(0.0)
     theta_dense = np.linspace(0.0, 2 * np.pi, 720)
-    # Background shading: smooth gradient (faint at 0-line, stronger outward)
-    min_alpha = 0.04
-    max_alpha = 0.30
-    theta_edges = np.linspace(0.0, 2 * np.pi, 361)
-    # Red region: 0 -> r_zero
-    r_edges_red = np.linspace(0.0, r_zero, 256)
-    r_mid_red = 0.5 * (r_edges_red[:-1] + r_edges_red[1:])
-    dist_red = (r_zero - r_mid_red) / max(r_zero, 1e-8)
-    alpha_red = min_alpha + (max_alpha - min_alpha) * dist_red
-    rgba_red = np.zeros((len(r_mid_red), len(theta_edges) - 1, 4))
-    rgba_red[..., 0] = 0xb2 / 255.0
-    rgba_red[..., 1] = 0x18 / 255.0
-    rgba_red[..., 2] = 0x2b / 255.0
-    rgba_red[..., 3] = alpha_red[:, None]
-    ax.pcolormesh(theta_edges, r_edges_red, rgba_red, shading="auto", zorder=0)
-    # Green region: r_zero -> r_max
-    r_max = 2.0 * med_range
-    r_edges_green = np.linspace(r_zero, r_max, 256)
-    r_mid_green = 0.5 * (r_edges_green[:-1] + r_edges_green[1:])
-    dist_green = (r_mid_green - r_zero) / max(r_max - r_zero, 1e-8)
-    alpha_green = min_alpha + (max_alpha - min_alpha) * dist_green
-    rgba_green = np.zeros((len(r_mid_green), len(theta_edges) - 1, 4))
-    rgba_green[..., 0] = 0x00 / 255.0
-    rgba_green[..., 1] = 0x6d / 255.0
-    rgba_green[..., 2] = 0x2c / 255.0
-    rgba_green[..., 3] = alpha_green[:, None]
-    ax.pcolormesh(theta_edges, r_edges_green, rgba_green, shading="auto", zorder=0)
     ax.plot(theta_dense, np.full_like(theta_dense, r_zero), color="black", lw=3.0, ls="-", alpha=0.95)
 
     # Choose polygon/marker color based on whether this is the overall cohort
@@ -1807,10 +1797,10 @@ def plot_z_scores(
         se_vals.append(se_float)
     se_vals = np.asarray(se_vals, dtype=float)
     if np.isfinite(se_vals).any():
-        r_low = med_range + (med - se_vals)
-        r_high = med_range + (med + se_vals)
-        r_low = np.clip(r_low, 0.0, 2.0 * med_range)
-        r_high = np.clip(r_high, 0.0, 2.0 * med_range)
+        r_low = _to_radial(med - se_vals)
+        r_high = _to_radial(med + se_vals)
+        r_low = np.clip(r_low, 0.0, 1.0)
+        r_high = np.clip(r_high, 0.0, 1.0)
         r_low = np.minimum(r_low, r_high)
         r_low_closed = np.concatenate([r_low, r_low[:1]])
         r_high_closed = np.concatenate([r_high, r_high[:1]])
@@ -1851,13 +1841,13 @@ def plot_z_scores(
         np.arange(fixed_min, fixed_max + tick_step * 0.5, tick_step),
         2,
     )
-    tick_radii = med_range + tick_meds
+    tick_radii = _to_radial(tick_meds)
     ax.set_yticks(tick_radii)
-    # Use a FuncFormatter so tick labels display signed median values (radius - med_range)
+    # Use a FuncFormatter so tick labels display median-space values
     from matplotlib.ticker import FuncFormatter
 
     def _radius_to_signed_label(r, pos=None):
-        signed = r - med_range
+        signed = _to_median_scalar(r)
         if abs(signed) < 1e-8:
             return "0.00"
         return f"{signed:.2f}"
@@ -1865,8 +1855,8 @@ def plot_z_scores(
     ax.yaxis.set_major_formatter(FuncFormatter(_radius_to_signed_label))
     ax.tick_params(axis="y", labelsize=12)
 
-    # Set radial limits to the outer ring (no extra padding)
-    ax.set_ylim(0.0, 2.0 * med_range)
+    # Set radial limits to normalized [0, 1] radial range
+    ax.set_ylim(0.0, 1.0)
 
     # Remove radial axis label as requested
     ax.set_ylabel("")
@@ -2114,9 +2104,10 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
     c0_signed = _profile_closed(conn_store.get("Cluster 0", {}))
     c1_signed = _profile_closed(conn_store.get("Cluster 1", {}))
 
-    # Use fixed nominal tick range, but grow med_range if data exceed it so nothing is clipped
+    # Use fixed nominal tick range, but allow expansion if data/SE exceed bounds.
+    # Mapping is asymmetric (fixed_min..fixed_max), not centered on zero.
     fixed_min = -0.70
-    fixed_max = 0.70
+    fixed_max = 0.40
     overall_se = _RADAR_OVERLAY_SE_OVERALL.get(key, {})
     cluster_se = _RADAR_OVERLAY_SE_CLUSTER.get(key, {}).get(conn_type, {}).get(dir_type, {})
 
@@ -2142,20 +2133,67 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
         vals = np.abs(prof) + se_vals
         return float(np.nanmax(vals)) if vals.size else np.nan
 
-    # compute maximum absolute median across all three profiles (including SEs)
-    all_vals = np.concatenate([overall_signed, c0_signed, c1_signed])
-    all_abs = np.nanmax(np.abs(all_vals))
-    overall_max = _max_abs_with_se(overall_signed, overall_se) if overall_se else np.nan
-    c0_max = _max_abs_with_se(c0_signed, cluster_se.get("Cluster 0", {})) if cluster_se else np.nan
-    c1_max = _max_abs_with_se(c1_signed, cluster_se.get("Cluster 1", {})) if cluster_se else np.nan
-    range_candidate = all_abs
-    for cand in (overall_max, c0_max, c1_max):
-        if np.isfinite(cand):
-            range_candidate = max(range_candidate, cand)
-    med_range = float(max(fixed_max, range_candidate if np.isfinite(range_candidate) else fixed_max))
+    def _profile_min_max_with_se(profile: np.ndarray, se_map: Dict[str, float]) -> Tuple[float, float]:
+        prof = np.asarray(profile, dtype=float)
+        se_vals = []
+        for var_name in var_names:
+            se_val = se_map.get(var_name)
+            try:
+                se_float = float(se_val)
+            except (TypeError, ValueError):
+                se_float = 0.0
+            if not np.isfinite(se_float) or se_float < 0:
+                se_float = 0.0
+            se_vals.append(se_float)
+        se_vals = np.asarray(se_vals, dtype=float)
+        target_len = len(var_names)
+        if prof.size < target_len:
+            pad = np.full(target_len - prof.size, np.nan)
+            prof = np.concatenate([prof, pad])
+        elif prof.size > target_len:
+            prof = prof[:target_len]
+        low = np.nanmin(prof - se_vals) if prof.size else np.nan
+        high = np.nanmax(prof + se_vals) if prof.size else np.nan
+        return float(low), float(high)
+
+    # Compute lower/upper bounds across all profiles (including SEs)
+    base_low = np.nanmin(np.concatenate([overall_signed, c0_signed, c1_signed]))
+    base_high = np.nanmax(np.concatenate([overall_signed, c0_signed, c1_signed]))
+    lower_med = fixed_min if not np.isfinite(base_low) else min(fixed_min, float(base_low))
+    upper_med = fixed_max if not np.isfinite(base_high) else max(fixed_max, float(base_high))
+
+    if overall_se:
+        low, high = _profile_min_max_with_se(overall_signed, overall_se)
+        if np.isfinite(low):
+            lower_med = min(lower_med, low)
+        if np.isfinite(high):
+            upper_med = max(upper_med, high)
+    if cluster_se:
+        low, high = _profile_min_max_with_se(c0_signed, cluster_se.get("Cluster 0", {}))
+        if np.isfinite(low):
+            lower_med = min(lower_med, low)
+        if np.isfinite(high):
+            upper_med = max(upper_med, high)
+        low, high = _profile_min_max_with_se(c1_signed, cluster_se.get("Cluster 1", {}))
+        if np.isfinite(low):
+            lower_med = min(lower_med, low)
+        if np.isfinite(high):
+            upper_med = max(upper_med, high)
+
+    med_span = upper_med - lower_med
+    if not np.isfinite(med_span) or med_span <= 0:
+        med_span = max(fixed_max - fixed_min, 1.0)
+        lower_med = fixed_min
+        upper_med = fixed_min + med_span
 
     def _to_radial(arr_signed: np.ndarray) -> np.ndarray:
-        return med_range + arr_signed
+        return (np.asarray(arr_signed, dtype=float) - lower_med) / med_span
+
+    def _to_radial_scalar(value: float) -> float:
+        return float((float(value) - lower_med) / med_span)
+
+    def _to_median_scalar(radius: float) -> float:
+        return float(lower_med + float(radius) * med_span)
 
     overall_closed = _to_radial(overall_signed)
     c0_closed = _to_radial(c0_signed)
@@ -2184,35 +2222,8 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
     ax = fig.add_subplot(111, polar=True)
 
     # Reference ring at zero-median level (smooth circle) - thicker solid line
-    r_zero = med_range
+    r_zero = _to_radial_scalar(0.0)
     theta_dense = np.linspace(0.0, 2 * np.pi, 720)
-    # Background shading: smooth gradient (faint at 0-line, stronger outward)
-    min_alpha = 0.04
-    max_alpha = 0.30
-    theta_edges = np.linspace(0.0, 2 * np.pi, 361)
-    # Red region: 0 -> r_zero
-    r_edges_red = np.linspace(0.0, r_zero, 256)
-    r_mid_red = 0.5 * (r_edges_red[:-1] + r_edges_red[1:])
-    dist_red = (r_zero - r_mid_red) / max(r_zero, 1e-8)
-    alpha_red = min_alpha + (max_alpha - min_alpha) * dist_red
-    rgba_red = np.zeros((len(r_mid_red), len(theta_edges) - 1, 4))
-    rgba_red[..., 0] = 0xb2 / 255.0
-    rgba_red[..., 1] = 0x18 / 255.0
-    rgba_red[..., 2] = 0x2b / 255.0
-    rgba_red[..., 3] = alpha_red[:, None]
-    ax.pcolormesh(theta_edges, r_edges_red, rgba_red, shading="auto", zorder=0)
-    # Green region: r_zero -> r_max
-    r_max = 2.0 * med_range
-    r_edges_green = np.linspace(r_zero, r_max, 256)
-    r_mid_green = 0.5 * (r_edges_green[:-1] + r_edges_green[1:])
-    dist_green = (r_mid_green - r_zero) / max(r_max - r_zero, 1e-8)
-    alpha_green = min_alpha + (max_alpha - min_alpha) * dist_green
-    rgba_green = np.zeros((len(r_mid_green), len(theta_edges) - 1, 4))
-    rgba_green[..., 0] = 0x00 / 255.0
-    rgba_green[..., 1] = 0x6d / 255.0
-    rgba_green[..., 2] = 0x2c / 255.0
-    rgba_green[..., 3] = alpha_green[:, None]
-    ax.pcolormesh(theta_edges, r_edges_green, rgba_green, shading="auto", zorder=0)
     ax.plot(theta_dense, np.full_like(theta_dense, r_zero), color="black", lw=3.0, ls="-", alpha=0.95)
 
     cluster_colors = _cluster_colors_for_modality(conn_type, dir_type)
@@ -2247,10 +2258,10 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
             profile_arr = np.concatenate([profile_arr, pad])
         elif profile_arr.size > target_len:
             profile_arr = profile_arr[:target_len]
-        r_low = med_range + (profile_arr - se_vals)
-        r_high = med_range + (profile_arr + se_vals)
-        r_low = np.clip(r_low, 0.0, 2.0 * med_range)
-        r_high = np.clip(r_high, 0.0, 2.0 * med_range)
+        r_low = _to_radial(profile_arr - se_vals)
+        r_high = _to_radial(profile_arr + se_vals)
+        r_low = np.clip(r_low, 0.0, 1.0)
+        r_high = np.clip(r_high, 0.0, 1.0)
         r_low = np.minimum(r_low, r_high)
         r_low_closed = np.concatenate([r_low, r_low[:1]])
         r_high_closed = np.concatenate([r_high, r_high[:1]])
@@ -2286,21 +2297,21 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
         np.arange(fixed_min, fixed_max + tick_step * 0.5, tick_step),
         2,
     )
-    tick_radii = med_range + tick_meds
+    tick_radii = _to_radial(tick_meds)
     ax.set_yticks(tick_radii)
 
     # Use a FuncFormatter so tick labels display signed median values (radius - med_range)
     from matplotlib.ticker import FuncFormatter
 
     def _radius_to_signed_label(r, pos=None):
-        signed = r - med_range
+        signed = _to_median_scalar(r)
         if abs(signed) < 1e-8:
             return "0.00"
         return f"{signed:.2f}"
 
     ax.yaxis.set_major_formatter(FuncFormatter(_radius_to_signed_label))
     ax.tick_params(axis="y", labelsize=12)
-    ax.set_ylim(0.0, 2.0 * med_range)
+    ax.set_ylim(0.0, 1.0)
 
     if conn_type == "functional":
         title_conn = "functional"
