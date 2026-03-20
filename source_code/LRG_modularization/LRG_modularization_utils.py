@@ -177,7 +177,7 @@ def plot_dendrogram(linkage_matrix, Th, xlabel="Distance", ylabel="Nodes", figsi
     if title:
         ax_dict['A'].set_title(title)
 
-    plt.savefig(f'dendrogram_Th_{Th}.png')
+    plt.savefig(f'dendrogram_Th_{Th}.svg')
 
     plt.show()
 
@@ -422,8 +422,8 @@ def plot_all_communities_figure(conn_matrix: np.ndarray,
                          alpha=alpha,
                          title='All Modules Overlay',
                          figure=fig_overlay)
-        overlay_ind_path = os.path.join(output_dir, 'all_modules_overlay.png')
-        disp_overlay.savefig(overlay_ind_path, dpi=300, bbox_inches='tight', format='png')
+        overlay_ind_path = os.path.join(output_dir, 'all_modules_overlay.svg')
+        disp_overlay.savefig(overlay_ind_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close(fig_overlay)
         print(f"[SAVE] {overlay_ind_path}")
 
@@ -455,8 +455,8 @@ def plot_all_communities_figure(conn_matrix: np.ndarray,
                                     alpha=alpha,
                                     title=title,
                                     figure=fig_ind)
-                ind_path = os.path.join(output_dir, f'module_{int(comm):02d}.png')
-                disp_ind.savefig(ind_path, dpi=300, bbox_inches='tight', format='png')
+                ind_path = os.path.join(output_dir, f'module_{int(comm):02d}.svg')
+                disp_ind.savefig(ind_path, dpi=300, bbox_inches='tight', format='svg')
                 plt.close(fig_ind)
                 print(f"[SAVE] {ind_path}")
 

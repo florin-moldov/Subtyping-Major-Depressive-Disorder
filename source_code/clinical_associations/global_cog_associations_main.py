@@ -83,8 +83,8 @@ def main():
     # Output locations
     PLOTS_DIR = ".../reports/plots"
     os.makedirs(PLOTS_DIR, exist_ok=True)
-    DATA_DIR = ".../cohorts"
-    OUTPUT_DIR = ".../cohorts"
+    DATA_DIR = ".../data/UKB/cohorts"
+    OUTPUT_DIR = ".../data/UKB/cohorts"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # Expected input: a combined cohort CSV containing a numeric
@@ -152,7 +152,7 @@ def main():
         group_column=GROUP_COLUMN,
         control_value=0,
         depression_value=1,
-        save_path=os.path.join(PLOTS_DIR, "violin_raw_tasks.png"),
+        save_path=os.path.join(PLOTS_DIR, "violin_raw_tasks.svg"),
         title="Cognitive task distributions (raw): Control vs Depression",
     )
     # Compute robust z-scores referenced to the control group. The helper
@@ -191,7 +191,7 @@ def main():
         control_value=0,
         depression_value=1,
         plot_depression_only=True,
-        save_path=os.path.join(PLOTS_DIR, "violin_task_zscores.png"),
+        save_path=os.path.join(PLOTS_DIR, "violin_task_zscores.svg"),
         title="Cognitive task distributions (z-scores): Depression cohort",
     )
 
@@ -248,7 +248,7 @@ def main():
         control_value=0,
         depression_value=1,
         plot_depression_only=True,
-        save_path=os.path.join(PLOTS_DIR, "violin_domain_zscores.png"),
+        save_path=os.path.join(PLOTS_DIR, "violin_domain_zscores.svg"),
         title="Cognitive domain distributions (z-scores): Depression cohort",
     )
 
@@ -295,7 +295,7 @@ def main():
             'Task Z-Scores (Depression Cohort; '
             f'N_control={n_controls_total}, N_depression={n_depressed_total})'
         ),
-        save_path=f'{PLOTS_DIR}/{DEPRESSION_CODES}_{ASSOCIATION_with}_task_z_scores.png',
+        save_path=f'{PLOTS_DIR}/{DEPRESSION_CODES}_{ASSOCIATION_with}_task_z_scores.svg',
     )
 
     # Visualize composite domain z-scores
@@ -308,7 +308,7 @@ def main():
             'Domain Composite Z-Scores (Depression Cohort; '
             f'N_control={n_controls_total}, N_depression={n_depressed_total})'
         ),
-        save_path=f'{PLOTS_DIR}/{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_z_scores.png',
+        save_path=f'{PLOTS_DIR}/{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_z_scores.svg',
     )
 
     # Persist the depression-cohort z-scored table for downstream use and
@@ -462,7 +462,7 @@ def main():
                     f"{cluster_name}; N_control={n_controls_cl}, "
                     f"N_depression={n_depressed_cl})"
                 ),
-                save_path=f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_task_z_scores_{cluster_name.replace(' ', '_')}.png",
+                save_path=f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_task_z_scores_{cluster_name.replace(' ', '_')}.svg",
             )
 
             plot_z_scores(
@@ -475,7 +475,7 @@ def main():
                     f"{cluster_name}; N_control={n_controls_cl}, "
                     f"N_depression={n_depressed_cl})"
                 ),
-                save_path=f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_z_scores_{cluster_name.replace(' ', '_')}.png",
+                save_path=f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_z_scores_{cluster_name.replace(' ', '_')}.svg",
             )
 
         # Concatenate per-cluster depressed-only datasets so between-cluster
@@ -501,7 +501,7 @@ def main():
                 cluster_order=("Cluster 0", "Cluster 1"),
                 conn_type=conn_type,
                 save_path=(
-                    f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_task_z_scores_clusters_violin.png"
+                    f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_task_z_scores_clusters_violin.svg"
                 ),
                 title=(
                     f"Task Z-Scores by Cluster ({conn_type.capitalize()} connectivity)"
@@ -519,7 +519,7 @@ def main():
                 cluster_order=("Cluster 0", "Cluster 1"),
                 conn_type=conn_type,
                 save_path=(
-                    f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_z_scores_clusters_violin.png"
+                    f"{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_z_scores_clusters_violin.svg"
                 ),
                 title=(
                     f"Domain Z-Scores by Cluster ({conn_type.capitalize()} connectivity)"
@@ -533,7 +533,7 @@ def main():
                 connectivity_var='Connectivity',
                 cognitive_vars=[f'{var}_z' for var in unique_z_vars_cluster],
                 group_column='Cluster',
-                save_path=f'{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/global_{DEPRESSION_CODES}_{ASSOCIATION_with}_task_connectivity.png',
+                save_path=f'{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/global_{DEPRESSION_CODES}_{ASSOCIATION_with}_task_connectivity.svg',
                 overall_title=(
                 f'Global {conn_type.capitalize()} Connectivity vs Cognitive Z-Scores'
                 )
@@ -584,7 +584,7 @@ def main():
                 connectivity_var='Connectivity',
                 cognitive_vars=list(DOMAINS.keys()),
                 group_column='Cluster',
-                save_path=f'{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/global_{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_connectivity.png',
+                save_path=f'{PLOTS_DIR}/schaefer1000+tian54/{conn_type}_con/global_{DEPRESSION_CODES}_{ASSOCIATION_with}_domain_connectivity.svg',
                 overall_title=(
                 f'Global {conn_type.capitalize()} Connectivity vs Cognitive Z-Scores'
                 )

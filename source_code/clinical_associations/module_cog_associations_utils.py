@@ -122,7 +122,7 @@ Important implementation notes
     example, bootstrapping in ``quantile_regression`` uses a large
     default ``R``), so developers may want to pass smaller values when
     testing.
-- Many functions write files (PNGs, CSVs, and log files). Functions
+- Many functions write files (SVGs, CSVs, and log files). Functions
     that accept a ``save_path`` or ``log_path`` will create parent
     directories as needed and may print saved paths for convenience.
     File-write failures are generally caught to avoid breaking
@@ -240,7 +240,7 @@ def _infer_modality_from_path(path: Optional[str]) -> Tuple[Optional[str], Optio
 
     - Preference is given to the parent directory name (e.g. ``functional_con``)
       but the filename itself is also inspected for tokens.
-    - Filenames ending with ``_internal.png`` or containing ``internal`` are
+    - Filenames ending with ``_internal.svg`` or containing ``internal`` are
       classified as ``'internal'``; likewise for ``'external'``.
 
     Parameters
@@ -271,9 +271,9 @@ def _infer_modality_from_path(path: Optional[str]) -> Tuple[Optional[str], Optio
         conn = "sfc"
 
     direction = None
-    if base_name.endswith("_internal.png") or "internal" in base_name:
+    if base_name.endswith("_internal.svg") or "internal" in base_name:
         direction = "internal"
-    elif base_name.endswith("_external.png") or "external" in base_name:
+    elif base_name.endswith("_external.svg") or "external" in base_name:
         direction = "external"
 
     return conn, direction
@@ -1322,7 +1322,7 @@ def quantile_regression(
 # ==============================================================================
 # VISUALIZATION
 # ==============================================================================
-# Plot violin distributions per group/cluster for cognitive variables and save PNG
+# Plot violin distributions per group/cluster for cognitive variables and save SVG
 def plot_cognitive_distributions_violin(
     data: pd.DataFrame,
     variables: Sequence[str],
@@ -1598,7 +1598,7 @@ def plot_z_scores(
         List of z-score column names to plot (must contain at least 3
         variables with finite medians).
     save_path : str, optional
-        Path where the individual radar PNG will be saved. If provided,
+        Path where the individual radar SVG will be saved. If provided,
         the function may also register the computed medians and SEs in the
         overlay registry for later assembly of combined plots. If ``None``,
         the plot is displayed in memory and not registered.
@@ -1882,7 +1882,7 @@ def plot_z_scores(
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="svg")
         print(f"\nFigure saved to: {save_path}")
 
     plt.close(fig)
@@ -1955,9 +1955,9 @@ def plot_z_scores(
         return
 
     dir_type = None
-    if base_name.endswith("_internal.png"):
+    if base_name.endswith("_internal.svg"):
         dir_type = "internal"
-    elif base_name.endswith("_external.png"):
+    elif base_name.endswith("_external.svg"):
         dir_type = "external"
     if dir_type is None:
         return
@@ -2056,7 +2056,7 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
     ``_RADAR_OVERLAY_SE_OVERALL``, ``_RADAR_OVERLAY_SE_CLUSTER``) and, when
     the registry contains the overall profile and both cluster profiles for
     the requested connectivity type and direction, assembles and saves an
-    overlaid PNG figure comparing Overall vs Cluster 0 vs Cluster 1.
+    overlaid SVG figure comparing Overall vs Cluster 0 vs Cluster 1.
 
     Parameters
     ----------
@@ -2338,9 +2338,9 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
     ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.05, 1.02), frameon=True)
 
     if base_kind == "task":
-        out_name = f"{depression_codes}_{association_type}_task_z_scores_{conn_type}_{dir_type}_overall_vs_clusters.png"
+        out_name = f"{depression_codes}_{association_type}_task_z_scores_{conn_type}_{dir_type}_overall_vs_clusters.svg"
     else:
-        out_name = f"{depression_codes}_{association_type}_domain_z_scores_{conn_type}_{dir_type}_overall_vs_clusters.png"
+        out_name = f"{depression_codes}_{association_type}_domain_z_scores_{conn_type}_{dir_type}_overall_vs_clusters.svg"
 
     save_path = store.get("_paths", {}).get(conn_type)
     if not save_path:
@@ -2353,7 +2353,7 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str, dir_
     out_path = os.path.join(plots_dir, out_name)
     fig.subplots_adjust(right=0.80)
     try:
-        plt.savefig(out_path, dpi=300, bbox_inches="tight", format="png")
+        plt.savefig(out_path, dpi=300, bbox_inches="tight", format="svg")
         print(f"Overlaid connectivity radar figure saved to: {out_path}")
     except Exception as exc:
         print(f"Failed to save overlaid connectivity radar figure {out_path}: {exc}")

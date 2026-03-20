@@ -1752,9 +1752,9 @@ def analyze_cross_modality_agreement(cohorts_dir, validation_plots_dir):
     # Save distribution barplot to file
     dist_fig_path = os.path.join(
         validation_plots_dir,
-        'modular_connectivity_cluster_distribution_by_type_barplot.png',
+        'modular_connectivity_cluster_distribution_by_type_barplot.svg',
     )
-    plt.savefig(dist_fig_path, dpi=300, bbox_inches='tight', format='png')
+    plt.savefig(dist_fig_path, dpi=300, bbox_inches='tight', format='svg')
     plt.close()
     print(f"  Saved cluster distribution barplot to: {dist_fig_path}")
 
@@ -1776,9 +1776,9 @@ def analyze_cross_modality_agreement(cohorts_dir, validation_plots_dir):
     # Save agreement heatmap to file
     agree_fig_path = os.path.join(
         validation_plots_dir,
-        'modular_connectivity_cluster_agreement_across_types_heatmap.png',
+        'modular_connectivity_cluster_agreement_across_types_heatmap.svg',
     )
-    plt.savefig(agree_fig_path, dpi=300, bbox_inches='tight', format='png')
+    plt.savefig(agree_fig_path, dpi=300, bbox_inches='tight', format='svg')
     plt.close()
     print(f"  Saved agreement heatmap to: {agree_fig_path}")
 
@@ -2018,9 +2018,9 @@ def analyze_cross_modality_agreement(cohorts_dir, validation_plots_dir):
             # Save the multi-panel figure
             ident_fig_path = os.path.join(
                 validation_plots_dir,
-                'modular_connectivity_cluster_distribution_with_identical_across_types_barplot.png',
+                'modular_connectivity_cluster_distribution_with_identical_across_types_barplot.svg',
             )
-            fig.savefig(ident_fig_path, dpi=300, bbox_inches='tight', format='png')
+            fig.savefig(ident_fig_path, dpi=300, bbox_inches='tight', format='svg')
             plt.close(fig)
             print(f"  Saved multi-panel identical-label overlay plot to: {ident_fig_path}")
         else:
@@ -2127,11 +2127,11 @@ def perform_module_hierarchical_clustering(
                 os.path.join(
                     figures_dir,
                     f'{conn_type}_con',
-                    f'{dir_type}_connectivity_dendrogram.png',
+                    f'{dir_type}_connectivity_dendrogram.svg',
                 ),
                 dpi=300,
                 bbox_inches='tight',
-                format='png',
+                format='svg',
             )
             plt.close()
 
@@ -2956,10 +2956,10 @@ def plot_bootstrap_diagnostics(stability_results, clusters, conn_type, out_dir, 
     # === SAVE FIGURE TO FILE ===
     # Construct output filename including analysis level, connectivity type, and direction
     out_path = os.path.join(out_dir, 
-                           f'{analysis_level}_{conn_type}_{dir_suffix}_bootstrap_diagnostics_combined.png')
+                           f'{analysis_level}_{conn_type}_{dir_suffix}_bootstrap_diagnostics_combined.svg')
     
-    # Save figure as high-resolution PNG
-    fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+    # Save figure as high-resolution SVG
+    fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
     
     # Close figure to free memory
     plt.close(fig)
@@ -2976,7 +2976,7 @@ def plot_module_violin_across_clusters(
     minmax=True,
     figsize_per_row=(12, 3),
     palette_name='Set2',
-    save_png=True,
+    save_svg=True,
     significance_map=None,
     comparison_groups=None,
     output_name=None,
@@ -3008,7 +3008,7 @@ def plot_module_violin_across_clusters(
         (width, height) per row to scale the figure size.
     palette_name : str, default='Set2'
         Seaborn palette name for cluster colors (not used if modality-specific colors applied).
-    save_png : bool, default=True
+    save_svg : bool, default=True
         If True, save the figures to plots_dir.
     significance_map : dict, optional
         Mapping {(conn_type, dir_type, module): {comparison_key: p-value}}
@@ -3564,21 +3564,21 @@ def plot_module_violin_across_clusters(
                         # Has extension: insert dir_slug before extension
                         rel_path = f"{base}_{dir_slug}{ext}"
                     else:
-                        # No extension: append dir_slug and .png if save_png is True
-                        rel_path = f"{rel_path}_{dir_slug}.png" if save_png else f"{rel_path}_{dir_slug}"
+                        # No extension: append dir_slug and .svg if save_svg is True
+                        rel_path = f"{rel_path}_{dir_slug}.svg" if save_svg else f"{rel_path}_{dir_slug}"
                 
                 out_path = os.path.join(plots_dir, rel_path)
             else:
                 # Use default filename format
-                out_path = os.path.join(plots_dir, f'{conn}_con', f"F32_{conn}_{dir_slug}_module_violin_by_cluster.png")
+                out_path = os.path.join(plots_dir, f'{conn}_con', f"F32_{conn}_{dir_slug}_module_violin_by_cluster.svg")
 
             # === SAVE FIGURE ===
             # Create output directory if it doesn't exist
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             
-            # Save as PNG if requested
-            if save_png:
-                fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+            # Save as SVG if requested
+            if save_svg:
+                fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
             
             # Close figure to free memory
             plt.close(fig)
@@ -3628,7 +3628,7 @@ def determine_covariate_distributions(
     Returns
     -------
     None
-        Saves PNG figure and TXT/CSV summary tables to out_dir.
+        Saves SVG figure and TXT/CSV summary tables to out_dir.
 
     Notes
     -----
@@ -4411,7 +4411,7 @@ def determine_covariate_distributions(
         )
 
     fig.subplots_adjust(hspace=0.4 if n_rows > 1 else 0.3)
-    out_name = 'modular_covariates_by_group_clusters_all.png'
+    out_name = 'modular_covariates_by_group_clusters_all.svg'
 
     fig.savefig(os.path.join(out_dir, out_name), dpi=300, bbox_inches='tight')
     plt.close(fig)
@@ -4496,7 +4496,7 @@ def plot_cluster_feature_brainmaps(
     pvalue_threshold : float, default=0.05
         Significance threshold for filtering modules when significance_map is provided.
     save_niftis : bool, default=True
-        If True, save NIfTI masks in addition to PNG figures.
+        If True, save NIfTI masks in addition to SVG figures.
     nifti_dir : str or None, default=None
         Directory for saving NIfTI files. If None, uses fig_dir/nifti_masks/.
     nifti_suffix : str, default='.nii.gz'
@@ -4634,7 +4634,7 @@ def plot_cluster_feature_brainmaps(
             pass  # Use default ticks if custom ticks fail
 
         # === SAVE FIGURE ===
-        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close(fig)
         print(f"Saved {out_path}")
         # Optionally save NIfTI volume
@@ -4688,7 +4688,7 @@ def plot_cluster_feature_brainmaps(
             pass
 
         # === SAVE FIGURE ===
-        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close(fig)
         print(f"Saved {out_path}")
         # Optionally save NIfTI volumes for both profiles
@@ -4865,7 +4865,7 @@ def plot_cluster_feature_brainmaps(
             vmin_single, vmax_single = 0.0, 1.0
             out_path_pair = os.path.join(
                 out_dir_conn,
-                f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_vs_cluster1_brainmaps.png",
+                f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_vs_cluster1_brainmaps.svg",
             )
             nifti_out_c0 = None
             nifti_out_c1 = None
@@ -4903,7 +4903,7 @@ def plot_cluster_feature_brainmaps(
                 abs_max = 0.5
             vmin_diff, vmax_diff = float(-abs_max), float(abs_max)
 
-            out_path_diff = os.path.join(out_dir_conn, f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_minus_cluster1_brainmap.png")
+            out_path_diff = os.path.join(out_dir_conn, f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_minus_cluster1_brainmap.svg")
             nifti_out_diff = None
             if save_niftis:
                 nifti_out_diff = os.path.join(
@@ -4992,8 +4992,8 @@ def plot_module_metric_distributions(
                 y=1.02,  # Position title above panels
                 fontsize=16,
             )
-            out_path = os.path.join(plots_dir, f'{cohort_label}_{metric_type}_distributions.png')
-            plt.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+            out_path = os.path.join(plots_dir, f'{cohort_label}_{metric_type}_distributions.svg')
+            plt.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
             plt.close()
 
 
@@ -5100,8 +5100,8 @@ def plot_module_correlation_matrices(final_df: pd.DataFrame, plots_dir: str) -> 
             mask=~sig_mask,  # Hide non-significant correlations
         )
         plt.title(f'FDR-significant Spearman Correlations - {cohort_label}', fontsize=18)
-        out_path = os.path.join(plots_dir, f'{cohort_label}_module_connectivity_correlation_matrix.png')
-        plt.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+        out_path = os.path.join(plots_dir, f'{cohort_label}_module_connectivity_correlation_matrix.svg')
+        plt.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close()
 
 def plot_clustering_validation_metrics(
@@ -5177,8 +5177,8 @@ def plot_clustering_validation_metrics(
             )
             
             # === SAVE FIGURE ===
-            out_path = os.path.join(plots_dir, f'{conn_type}_con', f'{dir_type}_connectivity_clustering_validation.png')
-            plt.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+            out_path = os.path.join(plots_dir, f'{conn_type}_con', f'{dir_type}_connectivity_clustering_validation.svg')
+            plt.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
             plt.close()
 
 # ==============================================================================
@@ -5556,7 +5556,7 @@ def run_module_quantile_regression_pipeline(
             conn_types=(conn_type,),    # Single connectivity type for this iteration
             dir_types=dir_types,        # Both internal and external directions
             significance_map=significance_payload,  # FDR-corrected p-values for annotation
-            output_name="{conn}_con/F32_{conn}_{dir}_module_violin.png",  # Filename template
+            output_name="{conn}_con/F32_{conn}_{dir}_module_violin.svg",  # Filename template
         )
 
     # === RETURN BRAINMAP SIGNIFICANCE MAP ===

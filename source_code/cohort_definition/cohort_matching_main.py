@@ -109,7 +109,7 @@ def main():
     # -------------------------------------------------------------------------
     print("\n[4/7] Visualizing propensity score distributions...")
     
-    plot_path = os.path.join(PLOTS_DIR, f'propensity_score_distributions_{DEPRESSION}.png')
+    plot_path = os.path.join(PLOTS_DIR, f'propensity_score_distributions_{DEPRESSION}.svg')
     
     plot_propensity_distributions(
         propensity_scores=combined_before['propensity_score'],

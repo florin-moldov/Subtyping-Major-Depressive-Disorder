@@ -19,7 +19,7 @@ Primary responsibilities
      module showing distributions across Control/Depression/Cluster groups and
      annotate significance based on corrected p-values.
  - plot_cluster_feature_brainmaps: render module-level median profiles and
-     difference maps as NIfTI/PNG brain images using a provided atlas and
+     difference maps as NIfTI/SVG brain images using a provided atlas and
      community label mapping.
 
 Expected inputs
@@ -41,7 +41,7 @@ Primary outputs
      `cluster0_vs_cluster1`) to p-values.
  - `significance_map`: mapping of `(conn_type, dir_type, module)` -> corrected
      p-value dictionaries used by plotting helpers to annotate significance.
- - PNG figures and optional NIfTI masks saved to `plots_dir`/`fig_dir` paths.
+ - SVG figures and optional NIfTI masks saved to `plots_dir`/`fig_dir` paths.
 
 Notes, assumptions, and runtime considerations
  - Quantile regression is performed in R and writes/reads a temporary CSV.
@@ -858,7 +858,7 @@ def plot_module_violin_across_clusters(
     dir_types=('internal', 'external'),
     minmax=True,
     figsize_per_row=(12, 3),
-    save_png=True,
+    save_svg=True,
     significance_map=None,
     comparison_groups=None,
     output_name=None,
@@ -891,7 +891,7 @@ def plot_module_violin_across_clusters(
         If True, min-max scale each feature to [0, 1] across subjects before plotting.
     figsize_per_row : tuple, default=(12, 3)
         (width, height) per row to scale the figure size.
-    save_png : bool, default=True
+    save_svg : bool, default=True
         If True, save the figures to plots_dir.
     significance_map : dict, optional
         Mapping {(conn_type, dir_type, module): {comparison_key: p-value}}
@@ -1460,8 +1460,8 @@ def plot_module_violin_across_clusters(
                         # Has extension: insert dir_slug before extension
                         rel_path = f"{base}_{dir_slug}{ext}"
                     else:
-                        # No extension: append dir_slug and .png if save_png is True
-                        rel_path = f"{rel_path}_{dir_slug}.png" if save_png else f"{rel_path}_{dir_slug}"
+                        # No extension: append dir_slug and .svg if save_svg is True
+                        rel_path = f"{rel_path}_{dir_slug}.svg" if save_svg else f"{rel_path}_{dir_slug}"
                 base, ext = os.path.splitext(rel_path)
                 if not base.endswith('sfc_external'):
                     base = f"{base}_sfc_external"
@@ -1469,15 +1469,15 @@ def plot_module_violin_across_clusters(
                 out_path = os.path.join(out_dir, rel_path)
             else:
                 # Use default filename format
-                out_path = os.path.join(out_dir, f"F32_{conn}_{dir_slug}_module_violin_by_cluster_sfc_external.png")
+                out_path = os.path.join(out_dir, f"F32_{conn}_{dir_slug}_module_violin_by_cluster_sfc_external.svg")
 
             # === SAVE FIGURE ===
             # Ensure output directory exists
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-            # Save as PNG if requested
-            if save_png:
-                fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+            # Save as SVG if requested
+            if save_svg:
+                fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
             
             # Close figure to free memory
             plt.close(fig)
@@ -1543,7 +1543,7 @@ def plot_cluster_feature_brainmaps(
     pvalue_threshold : float, default=0.05
         Significance threshold for filtering modules when significance_map is provided.
     save_niftis : bool, default=True
-        If True, save NIfTI masks in addition to PNG figures.
+        If True, save NIfTI masks in addition to SVG figures.
     nifti_dir : str or None, default=None
         Directory for saving NIfTI files. If None, uses fig_dir/nifti_masks/.
     nifti_suffix : str, default='.nii.gz'
@@ -1681,7 +1681,7 @@ def plot_cluster_feature_brainmaps(
             pass  # Use default ticks if custom ticks fail
 
         # === SAVE FIGURE ===
-        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close(fig)
         print(f"Saved {out_path}")
         # Optionally save NIfTI volume
@@ -1735,7 +1735,7 @@ def plot_cluster_feature_brainmaps(
             pass
 
         # === SAVE FIGURE ===
-        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+        fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close(fig)
         print(f"Saved {out_path}")
         # Optionally save NIfTI volumes for both profiles
@@ -1917,7 +1917,7 @@ def plot_cluster_feature_brainmaps(
             vmin_single, vmax_single = 0.0, 1.0
             out_path_pair = os.path.join(
                 out_dir_conn,
-                f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_vs_cluster1_brainmaps_sfc_external.png",
+                f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_vs_cluster1_brainmaps_sfc_external.svg",
             )
             nifti_out_c0 = None
             nifti_out_c1 = None
@@ -1955,7 +1955,7 @@ def plot_cluster_feature_brainmaps(
                 abs_max = 0.5
             vmin_diff, vmax_diff = float(-abs_max), float(abs_max)
 
-            out_path_diff = os.path.join(out_dir_conn, f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_minus_cluster1_brainmap_sfc_external.png")
+            out_path_diff = os.path.join(out_dir_conn, f"{output_basename_prefix}_{conn_type}_{dir_type}_cluster0_minus_cluster1_brainmap_sfc_external.svg")
             nifti_out_diff = None
             if save_niftis:
                 nifti_out_diff = os.path.join(
@@ -2216,7 +2216,7 @@ def run_module_quantile_regression_pipeline(
             conn_types=(conn_type,),    # Single connectivity type for this iteration
             dir_types=dir_types,        # Both internal and external directions
             significance_map=significance_payload,  # FDR-corrected p-values for annotation
-            output_name="{conn}_con/F32_{conn}_{dir}_module_violin.png",  # Filename template
+            output_name="{conn}_con/F32_{conn}_{dir}_module_violin.svg",  # Filename template
             colname_map=colname_map,
         )
 

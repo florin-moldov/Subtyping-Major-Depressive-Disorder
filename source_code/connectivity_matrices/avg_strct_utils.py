@@ -471,9 +471,9 @@ def plot_connectivity_matrix(
     reorder : bool
         If True, Nilearn will reorder regions for visualization.
     out_path : Optional[Path]
-            If provided, the plotted figure is saved as a PNG at this path.
+            If provided, the plotted figure is saved as a SVG at this path.
         dpi : int
-            Dots-per-inch for the saved PNG.
+            Dots-per-inch for the saved SVG.
 
         Side effects
         ------------
@@ -498,7 +498,7 @@ def plot_connectivity_matrix(
     if out_path is not None:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(out_path, bbox_inches="tight", dpi=dpi, format='png')
+        plt.savefig(out_path, bbox_inches="tight", dpi=dpi, format='svg')
 
     plotting.show()
     plt.close()

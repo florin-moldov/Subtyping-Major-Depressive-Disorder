@@ -27,7 +27,7 @@ High-level steps
 7. Compute clustering validation metrics (silhouette, Calinski-Harabasz)
      and save a validation summary CSV.
 8. Analyze cross-modality agreement across connectivity solutions.
-9. Merge covariates, test covariate associations (with PNG, CSV and TXT outputs), run quantile regression (via `rpy2` + R `quantreg`),
+9. Merge covariates, test covariate associations (with SVG, CSV and TXT outputs), run quantile regression (via `rpy2` + R `quantreg`),
      FDR-correct tests across modules, and annotate violin plots.
 10. Create brain maps summarizing cluster profile differences
         (optionally saving NIfTI masks for significant modules).
@@ -61,7 +61,7 @@ paths for input data, and output directories. Key variables include:
 
 Outputs
 -------
-The pipeline writes a set of CSVs, PNG figures, and optional NIfTI
+The pipeline writes a set of CSVs, SVG figures, and optional NIfTI
 volumes. Notable outputs:
 
 - `module_connectivity_wide.csv`: combined wide table of per-subject
@@ -72,7 +72,7 @@ volumes. Notable outputs:
     with covariates for regression. This is the final combined table used for all downstream analyses.
 - `module_connectivity_clustering_validation.csv`: validation metrics
     (silhouette and Calinski-Harabasz) per tested k.
-- Multiple PNG figures under `PLOTS_DIR` / `FIGURES_DIR`, including
+- Multiple SVG figures under `PLOTS_DIR` / `FIGURES_DIR`, including
     distribution histograms, correlation matrices, violin plots, heatmaps,
     and brain maps. Optionally saved NIfTI masks live in
     `{FIGURES_DIR}/nifti_masks/` when enabled.
@@ -130,13 +130,13 @@ DIRECTION_TYPES = ('internal', 'external')
 ICD_10_COVARIATES = ['I10', 'Z864', 'F419']
 PROGRESS_EVERY = int(os.getenv('MC_PROGRESS_EVERY', '50'))
 
-DEPRESSION_DIR = '.../F32_notask_STRCO_RSSCHA_RSTIA'
-CONTROL_DIR = '.../control_notask_STRCO_RSSCHA_RSTIA'
-GENERAL_DIR = '.../UKB/cohorts'
-COMBINED_COHORT_PATH = '.../UKB/cohorts/combined_cohort_F32.csv'
+DEPRESSION_DIR = '.../data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
+CONTROL_DIR = '.../data/UKB/control_notask_STRCO_RSSCHA_RSTIA'
+GENERAL_DIR = '.../data/UKB/cohorts'
+COMBINED_COHORT_PATH = '.../data/UKB/cohorts/combined_cohort_F32.csv'
 
-PLOTS_DIR = '.../schaefer1000+tian54'
-FIGURES_DIR = '.../schaefer1000+tian54'
+PLOTS_DIR = '.../reports/plots/schaefer1000+tian54'
+FIGURES_DIR = '.../reports/figures/schaefer1000+tian54'
 
 # Motion metrics (column names in head_motion.csv)
 fMRI_MOTION_METRIC = 'p24441_i2'  # Framewise displacement for fMRI

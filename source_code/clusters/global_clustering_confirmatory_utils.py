@@ -25,7 +25,7 @@ Requirements
 
 Side effects
 ------------
-- Several functions write output files (CSV, TXT, PNG) to provided output
+- Several functions write output files (CSV, TXT, SVG) to provided output
     directories. `run_quantile_regression` writes a temporary CSV to
     `/tmp/combined_data.csv` and invokes R; it also creates R objects in
     the R global environment during execution.
@@ -685,6 +685,6 @@ def create_violin_plot_with_significance(subject_scalar_control, subject_scalar_
     ax.set_ylim(y_min, y_current + 0.05 * y_range)
     ax.set_xlim(-0.6, 3.6)
     
-    plt.savefig(out_file, dpi=300, bbox_inches='tight', format='png')
+    plt.savefig(out_file, dpi=300, bbox_inches='tight', format='svg')
     plt.close()
     print("  Saved violin plot with significance brackets")

@@ -47,9 +47,9 @@ Primary outputs
 - Plain-text combined stdout log capturing both Python and R output (saved
     to `DEPRESSION_DIR/module_connectivity_output_sfc_external.txt`).
 - Per-family FDR logs (text) written to `depressed_subjects_dir`.
-- Annotated violin PNGs saved under `PLOTS_DIR` (filename template
+- Annotated violin SVGs saved under `PLOTS_DIR` (filename template
     controlled by plotting utilities).
-- Brainmap PNGs (and optional NIfTI masks) saved under `FIGURES_DIR`.
+- Brainmap SVGs (and optional NIfTI masks) saved under `FIGURES_DIR`.
 
 Runtime requirements and notes
 -----------------------------
@@ -85,25 +85,25 @@ CONNECTIVITY_TYPES = ('functional', 'structural', 'sfc')
 DIRECTION_TYPES = ('internal', 'external')
 ICD_10_COVARIATES = ['I10', 'Z864', 'F419']  # Hypertension, history of psychoactive substance abuse, Anxiety disorder
 
-DEPRESSION_DIR = '.../F32_notask_STRCO_RSSCHA_RSTIA'
+DEPRESSION_DIR = '/home/f_moldovan/projects/subtyping_depression/data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
 
 # Main data file originating from module_clustering_main.py that contains all module-level features and covariates for the confirmatory analysis.
-DATA = pd.read_csv('.../module_connectivity_features_with_covariates.csv') 
+DATA = pd.read_csv('/home/f_moldovan/projects/subtyping_depression/data/UKB/cohorts/module_connectivity_features_with_covariates.csv') 
 
-PLOTS_DIR = '.../schaefer1000+tian54'
-FIGURES_DIR = '.../schaefer1000+tian54'
+PLOTS_DIR = '/home/f_moldovan/projects/subtyping_depression/reports/plots/schaefer1000+tian54'
+FIGURES_DIR = '/home/f_moldovan/projects/subtyping_depression/reports/figures/schaefer1000+tian54'
 
 # Motion metrics (column names in head_motion.csv)
 fMRI_MOTION_METRIC = 'p24441_i2'  # Framewise displacement for fMRI
 dMRI_MOTION_METRIC = 'p24453_i2'  # Mean relative head motion for dMRI
 
 # Community labels and number of communities/modules from earlier LRG modularization
-COMMUNITY_LABELS_PATH = '.../notebooks/CM.txt'
+COMMUNITY_LABELS_PATH = '/home/f_moldovan/projects/subtyping_depression/notebooks/CM.txt'
 CM = np.loadtxt(COMMUNITY_LABELS_PATH)
 mods = np.unique(CM)
 
 # Path to Schaefer1000 + TianS4 combined atlas used for brainmap visualizations
-ATLAS_FILE = '.../Schaefer1000_TianS4_combined.nii.gz'
+ATLAS_FILE = '/home/f_moldovan/projects/subtyping_depression/atlases/deterministic/self_integrated/Schaefer1000_TianS4_combined.nii.gz'
 
 # Bootstrap iterations for quantile regression (R) standard errors and confidence intervals
 QUANTILE_REGRESSION_BOOTSTRAP_R = 5000
@@ -124,7 +124,7 @@ CLUSTER_COL = 'sfc_external_cluster'
 # be valid Python identifiers or R variable names, while still maintaining 
 # a connection to the original module labels.
 colname_map_df = pd.read_csv(
-    '.../module_connectivity_with_covariates_colname_map.csv'
+    '/home/f_moldovan/projects/subtyping_depression/data/UKB/cohorts/module_connectivity_with_covariates_colname_map.csv'
 )
 if not {'original', 'sanitized'}.issubset(colname_map_df.columns):
     raise ValueError("colname_map CSV must contain 'original' and 'sanitized' columns")

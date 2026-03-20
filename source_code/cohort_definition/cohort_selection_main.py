@@ -153,7 +153,7 @@ def main():
     print(f"    Found {len(comorbidity_distribution)} unique ICD-10 codes in depression cohort.")
 
     # Plot comorbidity distribution
-    plot_output_path = os.path.join(OUTPUT_DIR, f'comorbidity_distribution_depression_cohort.png')
+    plot_output_path = os.path.join(OUTPUT_DIR, f'comorbidity_distribution_depression_cohort.svg')
     plot_comorbidity_distribution(
         code_distribution=comorbidity_distribution,
         proportion_threshold= 0.10,

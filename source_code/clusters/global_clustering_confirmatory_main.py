@@ -42,7 +42,7 @@ Outputs and side effects
 ------------------------
 - Per-modality run log: ``<DEPRESSION_DIR>/global_{conn_type}_connectivity_output_sfc_clusters.txt``
 - Per-modality FDR log: ``<DEPRESSION_DIR>/global_{conn_type}_connectivity_FDR_sfc_clusters.txt``
-- Violin plot PNG per modality: ``<VALIDATION_PLOTS_BASE_DIR>/sfc_con/{conn_type}_global_conn_sfc_confirmatory_violinplots.png``
+- Violin plot SVG per modality: ``<VALIDATION_PLOTS_BASE_DIR>/sfc_con/{conn_type}_global_conn_sfc_confirmatory_violinplots.svg``
 - The R wrapper writes a temporary CSV to ``/tmp/combined_data.csv`` when
   calling R; this file is overwritten on each call (avoid concurrent runs
   or modify the utilities to use unique tempfiles).
@@ -77,6 +77,7 @@ from contextlib import contextmanager
 import pandas as pd
 
 # Import all utility functions
+sys.path.append('source_code')
 from clusters.global_clustering_confirmatory_utils import (
     setup_r_environment,
     apply_multiple_testing_correction,
@@ -98,11 +99,11 @@ ICD_COVARIATES = ['I10', 'Z864', 'F419'] # these are the most common comorbiditi
 PROGRESS_EVERY = int(os.getenv('GC_PROGRESS_EVERY', '50'))
 
 # Data paths
-DEPRESSION_DIR ='.../F32_notask_STRCO_RSSCHA_RSTIA'
-ALL_COMBINED = pd.read_csv('.../global_merged_connectivity_clusters.csv')
+DEPRESSION_DIR ='.../data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
+ALL_COMBINED = pd.read_csv('.../data/UKB/cohorts/global_merged_connectivity_clusters.csv')
 
 # Output directories
-VALIDATION_PLOTS_BASE_DIR = '.../schaefer1000+tian54'
+VALIDATION_PLOTS_BASE_DIR = '.../reports/plots/schaefer1000+tian54'
 COHORTS_DIR = '.../data/UKB/cohorts'
 
 # Motion metrics (column names in head_motion.csv)
@@ -206,7 +207,7 @@ def execute_pipeline_for_conn_type(conn_type, combined_df, validation_plots_dir,
     clusters,
     corrected_p_values,
     conn_type,
-    os.path.join(validation_plots_dir, f'{conn_type}_global_conn_sfc_confirmatory_violinplots.png')
+    os.path.join(validation_plots_dir, f'{conn_type}_global_conn_sfc_confirmatory_violinplots.svg')
   )
 
   print(f"\n{'-'*80}")

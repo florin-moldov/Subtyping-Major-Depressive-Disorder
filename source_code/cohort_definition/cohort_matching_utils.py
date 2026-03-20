@@ -731,7 +731,7 @@ def plot_propensity_distributions(
     >>> plot_propensity_distributions(
     ...     propensity_scores=combined['propensity_score'],
     ...     treatment=combined['treatment'],
-    ...     save_path='reports/plots/propensity_distributions.png'
+    ...     save_path='reports/plots/propensity_distributions.svg'
     ... )
     
     Notes
@@ -828,7 +828,7 @@ def plot_propensity_distributions(
     plt.tight_layout(rect=[0, 0.08, 1, 1])
     
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight', format='png')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight', format='svg')
         print(f"\nFigure saved to: {save_path}")
     
     plt.show()

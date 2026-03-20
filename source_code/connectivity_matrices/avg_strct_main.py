@@ -37,10 +37,10 @@ def main() -> None:
     # ---------------------------------------------------------------------
     project_root = Path(".../subtyping_depression")
 
-    cohort_type = "control"  # 'F32' or 'control'
+    cohort_type = "F32"  # 'F32' or 'control'
 
     data_dir = project_root / "data" / "UKB" / f"{cohort_type}_notask_STRCO_RSSCHA_RSTIA"
-    combined_cohort_file = project_root / "data" / "UKB" / "combined_cohort_F32.csv"
+    combined_cohort_file = project_root / "data" / "UKB" / "cohorts" / "combined_cohort_F32.csv"
     vis_dir = project_root / "reports" / "figures" / "schaefer1000+tian54" / "structural_con"
 
     labels_path = data_dir / "Schaefer7n1000p_TianSubcortexS4_labels.txt"
@@ -108,7 +108,7 @@ def main() -> None:
     plot_mat = normalize_for_plot(result.avg_matrix, log_transform=log_transform)
 
     vis_dir.mkdir(parents=True, exist_ok=True)
-    out_fig = vis_dir / f"{cohort_type}_average_structural_connectivity_matrix_streamline_count_10M.png"
+    out_fig = vis_dir / f"{cohort_type}_average_structural_connectivity_matrix_streamline_count_10M.svg"
 
     plot_connectivity_matrix(
         plot_mat,

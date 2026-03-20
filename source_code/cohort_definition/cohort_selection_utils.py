@@ -19,7 +19,7 @@ Key expectations and conventions
     2) a single combined column where each row is formatted like
          ``"<eid>,<codes_string>"`` (legacy UKB export style). Several
          functions detect and handle both forms.
-- Many functions perform I/O (reading or writing CSVs / PNGs) and print
+- Many functions perform I/O (reading or writing CSVs / SVGs) and print
     brief diagnostics; callers should be aware of these side effects.
 
 Notes on docstrings and behavior updates
@@ -891,7 +891,7 @@ def plot_comorbidity_distribution(
     plt.subplots_adjust(left=0.25)
 
     if output_path:
-        plt.savefig(output_path, dpi='figure', bbox_inches='tight', format='png')
+        plt.savefig(output_path, dpi='figure', bbox_inches='tight', format='svg')
         print(f"Plot saved to {output_path}")
 
     plt.show()

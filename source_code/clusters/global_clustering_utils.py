@@ -31,7 +31,7 @@ Requirements
 
 Side effects
 ------------
-- Several functions write output files (CSV, TXT, PNG) to provided output
+- Several functions write output files (CSV, TXT, SVG) to provided output
     directories. `run_quantile_regression` writes a temporary CSV to
     `/tmp/combined_data.csv` and invokes R; it also creates R objects in
     the R global environment during execution.
@@ -948,9 +948,9 @@ def analyze_cross_modality_agreement(cohorts_dir, validation_plots_dir):
         plt.legend(title='Cluster')
         dist_fig_path = os.path.join(
             validation_plots_dir,
-            'global_connectivity_cluster_distribution_by_type_barplot.png',
+            'global_connectivity_cluster_distribution_by_type_barplot.svg',
         )
-        plt.savefig(dist_fig_path, dpi=300, bbox_inches='tight', format='png')
+        plt.savefig(dist_fig_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close()
         print(f"  Saved cluster distribution barplot to: {dist_fig_path}")
 
@@ -969,9 +969,9 @@ def analyze_cross_modality_agreement(cohorts_dir, validation_plots_dir):
         plt.tight_layout()
         agree_fig_path = os.path.join(
             validation_plots_dir,
-            'global_connectivity_cluster_agreement_across_types_heatmap.png',
+            'global_connectivity_cluster_agreement_across_types_heatmap.svg',
         )
-        plt.savefig(agree_fig_path, dpi=300, bbox_inches='tight', format='png')
+        plt.savefig(agree_fig_path, dpi=300, bbox_inches='tight', format='svg')
         plt.close()
         print(f"  Saved agreement heatmap to: {agree_fig_path}")
 
@@ -1146,9 +1146,9 @@ def analyze_cross_modality_agreement(cohorts_dir, validation_plots_dir):
                 fig.subplots_adjust(hspace=0.35, wspace=0.25)
                 ident_fig_path = os.path.join(
                     validation_plots_dir,
-                    'global_connectivity_cluster_distribution_with_identical_across_types_barplot.png',
+                    'global_connectivity_cluster_distribution_with_identical_across_types_barplot.svg',
                 )
-                fig.savefig(ident_fig_path, dpi=300, bbox_inches='tight', format='png')
+                fig.savefig(ident_fig_path, dpi=300, bbox_inches='tight', format='svg')
                 plt.close(fig)
                 print(f"  Saved multi-panel identical-label overlay plot to: {ident_fig_path}")
             else:
@@ -1476,13 +1476,13 @@ def plot_dendrogram(linkage_matrix, conn_type, out_dir):
     conn_type : str
         Connectivity type used for figure title and filename.
     out_dir : str
-        Directory where the PNG will be written. The function will create
+        Directory where the SVG will be written. The function will create
         directories as needed when saving.
 
     Returns
     -------
     None
-        The dendrogram PNG is written to ``<out_dir>/<conn_type>_con/individual_avg_conn_dendrogram.png``.
+        The dendrogram SVG is written to ``<out_dir>/<conn_type>_con/individual_avg_conn_dendrogram.svg``.
     """
     plt.figure(figsize=(10, 6))
     dendrogram(linkage_matrix)
@@ -1490,8 +1490,8 @@ def plot_dendrogram(linkage_matrix, conn_type, out_dir):
     plt.ylabel('Distance')
     plt.tight_layout()
     
-    out_path = os.path.join(out_dir, f'{conn_type}_con/individual_avg_conn_dendrogram.png')
-    plt.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+    out_path = os.path.join(out_dir, f'{conn_type}_con/individual_avg_conn_dendrogram.svg')
+    plt.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
     plt.close()
     print(f"Saved dendrogram to: {out_path}")
 
@@ -1510,7 +1510,7 @@ def plot_bootstrap_diagnostics(stability_results, clusters, conn_type, out_dir, 
         Connectivity type (e.g., 'functional', 'structural', 'sfc'). Used to
         select plotting colors and for titles/filenames.
     out_dir : str
-        Directory where the combined diagnostics PNG will be written.
+        Directory where the combined diagnostics SVG will be written.
     analysis_level : str, default 'global'
         Prefix used for the saved filename (e.g., 'global' or 'modular').
     dir_type : str or None, default None
@@ -1520,7 +1520,7 @@ def plot_bootstrap_diagnostics(stability_results, clusters, conn_type, out_dir, 
     Returns
     -------
     None
-        Saves a figure named ``{analysis_level}_{conn_type}_{dir_suffix}_bootstrap_diagnostics_combined.png``
+        Saves a figure named ``{analysis_level}_{conn_type}_{dir_suffix}_bootstrap_diagnostics_combined.svg``
         under `out_dir` and prints the saved path.
     """
     # Unpack bootstrap diagnostics and create human-friendly arrays for
@@ -1630,8 +1630,8 @@ def plot_bootstrap_diagnostics(stability_results, clusters, conn_type, out_dir, 
             pass
     
     out_path = os.path.join(out_dir, 
-                           f'{analysis_level}_{conn_type}_{dir_suffix}_bootstrap_diagnostics_combined.png')
-    fig.savefig(out_path, dpi=300, bbox_inches='tight', format='png')
+                           f'{analysis_level}_{conn_type}_{dir_suffix}_bootstrap_diagnostics_combined.svg')
+    fig.savefig(out_path, dpi=300, bbox_inches='tight', format='svg')
     plt.close(fig)
     print(f"Saved bootstrap diagnostics to: {out_path}")
 
@@ -1760,7 +1760,7 @@ def create_violin_plot_with_significance(subject_scalar_control, subject_scalar_
     ax.set_ylim(y_min, y_current + 0.05 * y_range)
     ax.set_xlim(-0.6, 3.6)
     
-    plt.savefig(out_file, dpi=300, bbox_inches='tight', format='png')
+    plt.savefig(out_file, dpi=300, bbox_inches='tight', format='svg')
     plt.close()
     print("  Saved violin plot with significance brackets")
 
@@ -1797,7 +1797,7 @@ def determine_covariate_distributions(
     Side effects
     ------------
     - Writes per-row test CSVs to `out_dir` (if tests are performed).
-    - Writes several PNGs summarizing covariate distributions.
+    - Writes several SVGs summarizing covariate distributions.
     - Writes a TXT table (`global_covariate_distribution_summary.txt`) with
         numeric covariate summaries (n/mean/std/median/Q1/Q3 and binary counts)
         and merged raw/FDR test results.
@@ -1813,7 +1813,7 @@ def determine_covariate_distributions(
     motion_metric : str
         Default motion metric column name (used when modality-specific name is missing).
     out_dir : str
-        Directory where CSVs and PNGs will be saved.
+        Directory where CSVs and SVGs will be saved.
     cohorts_dir : str
         Directory containing per-modality combined cohort CSVs (used when
         building additional rows for other modalities).
@@ -2704,9 +2704,9 @@ def determine_covariate_distributions(
     # Layout and save the combined figure
     fig.subplots_adjust(hspace=0.4 if n_rows > 1 else 0.3)
     if n_rows > 2:
-        out_name = 'global_covariates_by_group_clusters_across_types.png'
+        out_name = 'global_covariates_by_group_clusters_across_types.svg'
     else:
-        out_name = f'global_{conn_type}_covariates_by_group_clusters.png'
+        out_name = f'global_{conn_type}_covariates_by_group_clusters.svg'
 
     fig.savefig(os.path.join(out_dir, out_name), dpi=300, bbox_inches='tight')
     plt.close(fig)
@@ -2893,7 +2893,7 @@ def perform_clustering_validation(X_mat, Z, clusters, conn_type, out_dir, cluste
         except Exception:
             pass
     
-    fig.savefig(os.path.join(out_dir, f'global_{conn_type}_cluster_validation_metrics.png'),
+    fig.savefig(os.path.join(out_dir, f'global_{conn_type}_cluster_validation_metrics.svg'),
                 dpi=300, bbox_inches='tight')
     plt.close(fig)
     
@@ -2946,7 +2946,7 @@ def save_clustering_results(stability_results, clusters, subject_scalar_depressi
 
     # Save bootstrap diagnostics (NMI and Jaccard lists) as a summary
     # table so that iteration-level results can be inspected or plotted
-    # independently of the multi-panel PNG created elsewhere.
+    # independently of the multi-panel SVG created elsewhere.
     boot_diag_df = pd.DataFrame({
         'bootstrap': np.arange(len(stability_results['nmi_list'])),
         'nmi': stability_results['nmi_list'],

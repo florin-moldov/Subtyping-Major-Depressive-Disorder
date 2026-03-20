@@ -12,7 +12,7 @@ Outputs
 - `subcortical_resting_state_timeseries_nans_info.csv`
 - `missing_subjects_resting_state_timeseries.csv`
 - `average_resting_state_connectivity_matrix.npy`
-- `*_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.png`
+- `*_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.svg`
 
 Edit the configuration in `main()` to match your cohort and directories.
 """
@@ -35,7 +35,7 @@ def main() -> None:
     # ---------------------------------------------------------------------
     project_root = Path(".../subtyping_depression")
 
-    cohort_type = "control"  # 'F32' or 'control'
+    cohort_type = "F32"  # 'F32' or 'control'
     data_dir = project_root / "data" / "UKB" / f"{cohort_type}_notask_STRCO_RSSCHA_RSTIA"
     vis_dir = project_root  / "reports" / "figures" / "schaefer1000+tian54" / "functional_con"
 
@@ -46,7 +46,6 @@ def main() -> None:
     nan_cfg = NaNHandlingConfig(
         interp_method="linear",
         roi_nan_ratio_threshold=0.05,
-        subject_bad_roi_ratio_threshold=0.10,
     )
 
     # Connectivity computation
@@ -90,13 +89,13 @@ def main() -> None:
     # Step 3: Plot
     # ---------------------------------------------------------------------
     print("[3/3] Plotting and saving average matrix...")
-    out_png = vis_dir / f"{cohort_type}_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.png"
+    out_svg = vis_dir / f"{cohort_type}_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.svg"
     plot_average_connectivity_matrix(
         avg_connectivity=avg_connectivity,
         labels_path=labels_path,
-        out_path=out_png,
+        out_path=out_svg,
     )
-    print("  saved:", out_png)
+    print("  saved:", out_svg)
 
 
 if __name__ == "__main__":

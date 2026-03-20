@@ -586,7 +586,7 @@ def plot_average_connectivity_matrix(
         Optional path to a text file with one label per line used to annotate
         axes. If ``None`` or the file does not exist, no labels are shown.
     out_path : Path
-        Path to save the generated plot (PNG). Parent directories will be
+        Path to save the generated plot (SVG). Parent directories will be
         created if missing; the file is written with ``dpi=300``.
     title : str
         Figure title.
@@ -597,7 +597,7 @@ def plot_average_connectivity_matrix(
 
     Side effects
     ------------
-    - Saves a PNG to ``out_path`` and calls ``nilearn.plotting.show()`` (may
+    - Saves a SVG to ``out_path`` and calls ``nilearn.plotting.show()`` (may
       open an interactive window in non-headless environments).
     """
 
@@ -622,6 +622,6 @@ def plot_average_connectivity_matrix(
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, bbox_inches="tight", dpi=300, format="png")
+    plt.savefig(out_path, bbox_inches="tight", dpi=300, format="svg")
     plotting.show()
     plt.close()

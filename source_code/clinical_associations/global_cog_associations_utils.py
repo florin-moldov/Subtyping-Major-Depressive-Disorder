@@ -122,7 +122,7 @@ Important implementation notes
     example, bootstrapping in ``quantile_regression`` uses a large
     default ``R``), so developers may want to pass smaller values when
     testing.
-- Many functions write files (PNGs, CSVs, and log files). Functions
+- Many functions write files (SVGs, CSVs, and log files). Functions
     that accept a ``save_path`` or ``log_path`` will create parent
     directories as needed and may print saved paths for convenience.
     File-write failures are generally caught to avoid breaking
@@ -1487,7 +1487,7 @@ def plot_z_scores(
 
     Side effects
     ------------
-    - When ``save_path`` is provided, the function writes a PNG to that
+    - When ``save_path`` is provided, the function writes an SVG to that
       path and may register the result into the module-level overlay
       stores (``_RADAR_OVERLAY_STORE`` and related maps). Overlay
       rendering depends on filename and directory conventions: files
@@ -1511,7 +1511,7 @@ def plot_z_scores(
         List of z-score column names to plot (e.g.,
         ``['Fluid_intelligence_score_z', 'Vocabulary_score_z']``).
     save_path : str, optional
-        Path to save the radar chart image (PNG). If None, the plot
+        Path to save the radar chart image (SVG). If None, the plot
         is not saved to disk (default: None).
     figsize : Tuple[int, int], optional
         Figure size in inches (width, height) (default: (20, 20)).
@@ -1784,7 +1784,7 @@ def plot_z_scores(
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="svg")
         print(f"\nFigure saved to: {save_path}")
 
     plt.close(fig)
@@ -1924,7 +1924,7 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str) -> N
       profiles) and to :func:`register_radar_overlay_significance`
       (to populate p-value maps). If prerequisites are not met the
       function returns silently.
-    - The function writes an overlaid PNG to the plots directory
+    - The function writes an overlaid SVG to the plots directory
       inferred from the stored save paths and prints the saved path on
       success. Failures to save are caught and printed.
     """
@@ -2184,9 +2184,9 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str) -> N
     ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.05, 1.02), frameon=True)
 
     if base_kind == "task":
-        out_name = f"{depression_codes}_{association_type}_task_z_scores_{conn_type}_overall_vs_clusters.png"
+        out_name = f"{depression_codes}_{association_type}_task_z_scores_{conn_type}_overall_vs_clusters.svg"
     else:
-        out_name = f"{depression_codes}_{association_type}_domain_z_scores_{conn_type}_overall_vs_clusters.png"
+        out_name = f"{depression_codes}_{association_type}_domain_z_scores_{conn_type}_overall_vs_clusters.svg"
 
     save_path = store.get("_paths", {}).get(conn_type)
     if not save_path:
@@ -2199,7 +2199,7 @@ def _render_connectivity_overlay(key: Tuple[str, str, str], conn_type: str) -> N
     out_path = os.path.join(plots_dir, out_name)
     fig.subplots_adjust(right=0.80)
     try:
-        plt.savefig(out_path, dpi=300, bbox_inches="tight", format="png")
+        plt.savefig(out_path, dpi=300, bbox_inches="tight", format="svg")
         print(f"Overlaid connectivity radar figure saved to: {out_path}")
     except Exception as exc:
         print(f"Failed to save overlaid connectivity radar figure {out_path}: {exc}")
@@ -2408,7 +2408,7 @@ def plot_conn_cognition_association(
     plt.tight_layout()
     
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="png")
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", format="svg")
         print(f"Scatter plot grid saved to: {save_path}")
     
     plt.close()

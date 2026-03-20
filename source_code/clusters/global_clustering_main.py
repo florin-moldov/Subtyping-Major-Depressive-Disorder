@@ -59,7 +59,7 @@ High-level steps (what the script does, in order)
 5. Hierarchical clustering (depression cohort)
   - Perform Ward linkage hierarchical clustering on subject-by-node strength
       feature matrix and cut the tree to produce two clusters (k=2).
-  - Labels are normalized to 0/1 and dendrogram PNG is saved.
+  - Labels are normalized to 0/1 and dendrogram SVG is saved.
 
 6. Clustering validation
   - Compute silhouette and Calinski-Harabasz scores for a range of k (2..20)
@@ -110,11 +110,11 @@ High-level steps (what the script does, in order)
     - `global_{conn_type}_bootstrap_diagnostics.csv`
     - `global_{conn_type}_cluster_stability.csv`
     - per-node correlation CSVs and covariate-test CSVs under `out_dir`
-  - Figures (PNG):
-    - dendrogram: `{conn_type}_con/individual_avg_conn_dendrogram.png`
-    - bootstrap diagnostics combined PNG
-    - covariate distribution multi-panel PNGs
-    - violin plot: `{conn_type}_con/individual_avg_conn_clusters_violinplot.png`
+  - Figures (SVG):
+    - dendrogram: `{conn_type}_con/individual_avg_conn_dendrogram.svg`
+    - bootstrap diagnostics combined SVG
+    - covariate distribution multi-panel SVGs
+    - violin plot: `{conn_type}_con/individual_avg_conn_clusters_violinplot.svg`
     - cross-modality agreement heatmap and barplots
   - Text tables:
     - `global_covariate_distribution_summary.txt` with numeric summaries and 
@@ -186,17 +186,17 @@ ICD_COVARIATES = ['I10', 'Z864', 'F419'] # these are the most common comorbiditi
 PROGRESS_EVERY = int(os.getenv('GC_PROGRESS_EVERY', '50'))
 
 # Data paths
-DEPRESSION_DIR = '.../F32_notask_STRCO_RSSCHA_RSTIA'
-CONTROL_DIR = '.../control_notask_STRCO_RSSCHA_RSTIA'
-GENERAL_DIR = '.../cohorts'
-COMBINED_COHORT_PATH = '.../combined_cohort_F32.csv'
-DEPRESSION_COHORT_PATH = '.../depression_cohort_F32.csv'
-HEAD_MOTION_PATH = '.../head_motion.csv.gz'
+DEPRESSION_DIR = '.../data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
+CONTROL_DIR = '.../data/UKB/control_notask_STRCO_RSSCHA_RSTIA'
+GENERAL_DIR = '.../data/UKB/cohorts'
+COMBINED_COHORT_PATH = '.../data/UKB/cohorts/combined_cohort_F32.csv'
+DEPRESSION_COHORT_PATH = '.../data/UKB/cohorts/depression_cohort_F32.csv'
+HEAD_MOTION_PATH = '.../data/UKB/head_motion.csv.gz'
 
 # Output directories
-VALIDATION_PLOTS_BASE_DIR = '.../schaefer1000+tian54'
-FIGURES_BASE_DIR = '.../schaefer1000+tian54'
-COHORTS_DIR = '.../cohorts'
+VALIDATION_PLOTS_BASE_DIR = '.../reports/plots/schaefer1000+tian54'
+FIGURES_BASE_DIR = '.../reports/figures/schaefer1000+tian54'
+COHORTS_DIR = '.../data/UKB/cohorts'
 
 # Motion metrics (column names in head_motion.csv)
 fMRI_MOTION_METRIC = 'p24441_i2'  # Framewise displacement for fMRI
@@ -491,7 +491,7 @@ def execute_pipeline_for_conn_type(conn_type, cohort_data, validation_plots_dir,
     clusters,
     corrected_p_values,
     conn_type,
-    os.path.join(validation_plots_dir, 'individual_avg_conn_clusters_violinplot.png')
+    os.path.join(validation_plots_dir, 'individual_avg_conn_clusters_violinplots.svg')
   )
 
   print(f"\n{'-'*80}")
