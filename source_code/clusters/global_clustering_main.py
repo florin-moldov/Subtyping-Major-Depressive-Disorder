@@ -186,12 +186,12 @@ ICD_COVARIATES = ['I10', 'Z864', 'F419'] # these are the most common comorbiditi
 PROGRESS_EVERY = int(os.getenv('GC_PROGRESS_EVERY', '50'))
 
 # Data paths
-DEPRESSION_DIR = '.../data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
-CONTROL_DIR = '.../data/UKB/control_notask_STRCO_RSSCHA_RSTIA'
-GENERAL_DIR = '.../data/UKB/cohorts'
-COMBINED_COHORT_PATH = '.../data/UKB/cohorts/combined_cohort_F32.csv'
-DEPRESSION_COHORT_PATH = '.../data/UKB/cohorts/depression_cohort_F32.csv'
-HEAD_MOTION_PATH = '.../data/UKB/head_motion.csv.gz'
+DEPRESSION_DIR = '...data/UKB/F32_notask_STRCO_RSSCHA_RSTIA'
+CONTROL_DIR = '...data/UKB/control_notask_STRCO_RSSCHA_RSTIA'
+GENERAL_DIR = '...data/UKB/cohorts'
+COMBINED_COHORT_PATH = '...data/UKB/cohorts/combined_cohort_F32.csv'
+DEPRESSION_COHORT_PATH = '...data/UKB/cohorts/depression_cohort_F32.csv'
+HEAD_MOTION_PATH = '...data/UKB/head_motion.csv.gz'
 
 # Output directories
 VALIDATION_PLOTS_BASE_DIR = '.../reports/plots/schaefer1000+tian54'
