@@ -7,9 +7,9 @@
   <img src="https://img.shields.io/badge/status-ongoing-black?style=plastic" alt="status">
 </p>
 
-# Multiscale And Multimodal Subtyping of Major Depressive Disorder: Structure-Function Coupling Underlies Cognitive Heterogeneity
+# Multimodal Subtyping of Major Depressive Disorder: Structure-Function Coupling Underlies Cognitive Heterogeneity
 
-This repository contains code (Python scripts within *source_code/* and Jupyter notebooks within *notebooks/*) for the analyses and figures in the paper "Multiscale And Multimodal Subtyping of Major Depressive Disorder: Structure-Function Coupling Underlies Cognitive Heterogeneity" by Moldovan et al. (2026; manuscript in preparation). The code is organized as follows:
+This repository contains code (Python scripts within *source_code/* and Jupyter notebooks within *notebooks/*) for the analyses and figures in the paper "Multimodal Subtyping of Major Depressive Disorder: Structure-Function Coupling Underlies Cognitive Heterogeneity" by Moldovan et al. (2026; manuscript in preparation). The code is organized as follows:
 
 - *notebooks/*: Jupyter notebooks for the analyses and figures in the paper. These notebooks are organized in a way that reflects the structure of the paper, with separate notebooks for each major analysis and figure.
 
