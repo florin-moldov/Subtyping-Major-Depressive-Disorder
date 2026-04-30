@@ -7,7 +7,7 @@ Also, it visualizes the average connectivity matrix.
 Outputs
 --------------------------------
 - `merged_resting_state_timeseries_paths.csv`
-- per-subject `*_connectivity.npy` matrices (optional)
+- per-subject `*_connectivity.npy` matrices
 - `cortical_resting_state_timeseries_nans_info.csv`
 - `subcortical_resting_state_timeseries_nans_info.csv`
 - `missing_subjects_resting_state_timeseries.csv`
@@ -39,9 +39,6 @@ def main() -> None:
     data_dir = project_root / "data" / "UKB" / f"{cohort_type}_notask_STRCO_RSSCHA_RSTIA"
     vis_dir = project_root  / "reports" / "figures" / "schaefer1000+tian54" / "functional_con"
 
-    # If True, assumes merged time series + metadata CSV already exist
-    skip_prepare = False
-
     # Time series preparation
     nan_cfg = NaNHandlingConfig(
         interp_method="linear",
@@ -59,19 +56,14 @@ def main() -> None:
     save_subject_matrices = True
 
     # ---------------------------------------------------------------------
-    # Step 1: Prepare merged time series (optional)
+    # Step 1: Prepare merged time series
     # ---------------------------------------------------------------------
-    if not skip_prepare:
-        print("[1/3] Preparing merged time series...")
-        outputs = prepare_merged_timeseries(data_dir=data_dir, nan_cfg=nan_cfg)
-        labels_path = outputs["labels_path"]
-        metadata_paths_csv = outputs["metadata_paths_csv"]
-        print("  labels:", labels_path)
-        print("  metadata:", metadata_paths_csv)
-    else:
-        print("[1/3] Skipping time series preparation...")
-        labels_path = data_dir / "Schaefer7n1000p_TianSubcortexS4_labels.txt"
-        metadata_paths_csv = data_dir / "merged_resting_state_timeseries_paths.csv"
+    print("[1/3] Preparing merged time series...")
+    outputs = prepare_merged_timeseries(data_dir=data_dir, nan_cfg=nan_cfg)
+    labels_path = outputs["labels_path"]
+    metadata_paths_csv = outputs["metadata_paths_csv"]
+    print("  labels:", labels_path)
+    print("  metadata:", metadata_paths_csv)
 
     # ---------------------------------------------------------------------
     # Step 2: Compute average connectivity
