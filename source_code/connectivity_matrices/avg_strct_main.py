@@ -8,7 +8,7 @@ Primary workflow
    - NaNs in a subject matrix
 4) Compute the arithmetic mean across successfully included subjects
 5) Save the average matrix and small QC reports
-6) Visualize the average matrix with nilearn's matrix plot
+6) Visualize example subject's structural connectome alongside the average matrix with nilearn's matrix plot
 7) Exclude subjects with missing functional and structural connectomes from depression and combined cohort files
 
 """
@@ -42,6 +42,8 @@ def main() -> None:
     data_dir = project_root / "data" / "UKB" / f"{cohort_type}_notask_STRCO_RSSCHA_RSTIA"
     combined_cohort_file = project_root / "data" / "UKB" / "cohorts" / "combined_cohort_F32.csv"
     vis_dir = project_root / "reports" / "figures" / "schaefer1000+tian54" / "structural_con"
+
+    example_subject_id = "..."  # Change to a valid subject ID from your cohort to visualize their connectivity matrix
 
     labels_path = data_dir / "Schaefer7n1000p_TianSubcortexS4_labels.txt"
 
@@ -103,15 +105,35 @@ def main() -> None:
     print(f"Saved average structural connectivity matrix to {out_avg_npy}.")
 
     # ---------------------------------------------------------------------
-    # Step 3: Visualize the average structural connectivity matrix
+    # Step 3: Visualize example subject's structural connectivity matrix
+    # and the average structural connectivity matrix
     # ---------------------------------------------------------------------
-    plot_mat = normalize_for_plot(result.avg_matrix, log_transform=log_transform)
-
     vis_dir.mkdir(parents=True, exist_ok=True)
-    out_fig = vis_dir / f"{cohort_type}_average_structural_connectivity_matrix_streamline_count_10M.svg"
+
+    print("[3/3] Plotting and saving example subject's structural connectivity matrix...")
+    example_matrix_path = data_dir / f"{example_subject_id}" / connectome_subdir / connectome_template
+    if example_matrix_path.exists():
+        example_matrix = pd.read_csv(example_matrix_path, compression="infer", header=None).to_numpy()
+        plot_example_matrix = normalize_for_plot(example_matrix, log_transform=log_transform)
+        out_png_example = vis_dir / f"{cohort_type}_{example_subject_id}_struct_conn_matrix_streamline_count_Schaefer7n1000p_TianSubcortexS4.png"
+        plot_connectivity_matrix(
+            mat = plot_example_matrix,
+            title=None,  # No title for subject matrix
+            labels=None,  # No labels for subject matrix
+            out_path=out_png_example,
+            cmap="Reds",
+        )
+        print(f"Saved visualization of example subject's structural connectivity matrix to {out_png_example}.")
+    else:
+        print(f"  Warning: Example subject's structural connectome not found at {example_matrix_path}. Skipping example plot.")
+    
+    print("[3/3] Plotting and saving average structural connectivity matrix...")
+    plot_avg_mat = normalize_for_plot(result.avg_matrix, log_transform=log_transform)
+
+    out_fig = vis_dir / f"{cohort_type}_average_structural_connectivity_matrix_streamline_count_10M.png"
 
     plot_connectivity_matrix(
-        plot_mat,
+        mat = plot_avg_mat,
         labels=labels,
         title="Average Structural Connectivity Matrix",
         cmap="Reds",

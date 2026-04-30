@@ -42,6 +42,8 @@ def main() -> None:
     data_dir = project_root / "data" / "UKB" / f"{cohort_type}_notask_STRCO_RSSCHA_RSTIA"
     vis_dir = project_root  / "reports" / "figures" / "schaefer1000+tian54" / "functional_con"
 
+    example_subject_id = "..."  # Change to a valid subject ID from your cohort to visualize their connectivity matrix
+
     # Time series preparation
     nan_cfg = NaNHandlingConfig(
         interp_method="linear",
@@ -84,7 +86,6 @@ def main() -> None:
     # Step 3: Plot
     # ---------------------------------------------------------------------
     print("[3/3] Plotting and saving example subject's connectivity matrix...")
-    example_subject_id = "..."  # Change to a valid subject ID
     example_matrix_path = data_dir / f"{example_subject_id}" / "i2" / f"{example_subject_id}_connectivity.npy"
     if example_matrix_path.exists():
         example_matrix = np.load(example_matrix_path)

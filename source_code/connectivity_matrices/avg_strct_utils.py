@@ -11,7 +11,7 @@ Primary workflow
    - NaNs in a subject matrix
 4) Compute the arithmetic mean across successfully included subjects
 5) Save the average matrix and small QC reports
-6) Visualize the average matrix with nilearn's matrix plot
+6) Visualize example subject's structural connectome alongside the average matrix with nilearn's matrix plot
 
 Architecture
 ------------
@@ -35,6 +35,9 @@ from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from nilearn import plotting
+import matplotlib.pyplot as plt
 
 # ==============================================================================
 # UTILITIES
@@ -471,9 +474,9 @@ def plot_connectivity_matrix(
     reorder : bool
         If True, Nilearn will reorder regions for visualization.
     out_path : Optional[Path]
-            If provided, the plotted figure is saved as a SVG at this path.
+            If provided, the plotted figure is saved at this path.
         dpi : int
-            Dots-per-inch for the saved SVG.
+            Dots-per-inch for the saved image.
 
         Side effects
         ------------
@@ -481,9 +484,6 @@ def plot_connectivity_matrix(
           open an interactive window in non-headless environments.
         - If ``out_path`` is provided, the file is written to disk.
         """
-
-    from nilearn import plotting
-    import matplotlib.pyplot as plt
 
     plotting.plot_matrix(
         mat,
@@ -498,7 +498,7 @@ def plot_connectivity_matrix(
     if out_path is not None:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(out_path, bbox_inches="tight", dpi=dpi, format='svg')
+        plt.savefig(out_path, bbox_inches="tight", dpi=dpi)
 
     plotting.show()
     plt.close()

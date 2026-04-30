@@ -588,7 +588,7 @@ def plot_connectivity_matrix(
         Optional path to a text file with one label per line used to annotate
         axes. If ``None`` or the file does not exist, no labels are shown.
     out_path : Path
-        Path to save the generated plot (SVG). Parent directories will be
+        Path to save the generated plot. Parent directories will be
         created if missing; the file is written with ``dpi=300``.
     title : str
         Figure title.
