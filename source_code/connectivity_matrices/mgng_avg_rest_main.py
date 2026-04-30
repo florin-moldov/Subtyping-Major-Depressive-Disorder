@@ -12,7 +12,8 @@ Outputs
 - `subcortical_resting_state_timeseries_nans_info.csv`
 - `missing_subjects_resting_state_timeseries.csv`
 - `average_resting_state_connectivity_matrix.npy`
-- `*_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.svg`
+- example subject `*_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.png`
+- `*_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.png`
 
 Edit the configuration in `main()` to match your cohort and directories.
 """
@@ -20,11 +21,13 @@ Edit the configuration in `main()` to match your cohort and directories.
 from __future__ import annotations
 from pathlib import Path
 
+import numpy as np
+
 from mgng_avg_rest_utils import (
     ConnectivityConfig,
     NaNHandlingConfig,
     compute_average_connectivity,
-    plot_average_connectivity_matrix,
+    plot_connectivity_matrix,
     prepare_merged_timeseries,
 )
 
@@ -66,7 +69,7 @@ def main() -> None:
     print("  metadata:", metadata_paths_csv)
 
     # ---------------------------------------------------------------------
-    # Step 2: Compute average connectivity
+    # Step 2: Compute average connectivity (and save subject matrices if configured)
     # ---------------------------------------------------------------------
     print("[2/3] Computing average connectivity...")
     avg_connectivity = compute_average_connectivity(
@@ -80,14 +83,31 @@ def main() -> None:
     # ---------------------------------------------------------------------
     # Step 3: Plot
     # ---------------------------------------------------------------------
+    print("[3/3] Plotting and saving example subject's connectivity matrix...")
+    example_subject_id = "..."  # Change to a valid subject ID
+    example_matrix_path = data_dir / f"{example_subject_id}" / "i2" / f"{example_subject_id}_connectivity.npy"
+    if example_matrix_path.exists():
+        example_matrix = np.load(example_matrix_path)
+        out_png_example = vis_dir / f"{cohort_type}_{example_subject_id}_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.png"
+        plot_connectivity_matrix(
+            avg_connectivity=example_matrix,
+            title=None,  # No title for subject matrix
+            labels_path=None,  # No labels for subject matrix
+            out_path=out_png_example,
+        )
+        print("  saved:", out_png_example)
+    else:
+        print(f"  Warning: Example subject matrix not found at {example_matrix_path}. Skipping example plot.")
+    
     print("[3/3] Plotting and saving average matrix...")
-    out_svg = vis_dir / f"{cohort_type}_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.svg"
-    plot_average_connectivity_matrix(
+    out_png = vis_dir / f"{cohort_type}_average_func_conn_matrix_Schaefer7n1000p_TianSubcortexS4.png"
+    plot_connectivity_matrix(
         avg_connectivity=avg_connectivity,
+        title="Average Functional Connectivity Matrix\n(Schaefer7n1000p + TianSubcortexS4)",
         labels_path=labels_path,
-        out_path=out_svg,
+        out_path=out_png,
     )
-    print("  saved:", out_svg)
+    print("  saved:", out_png)
 
 
 if __name__ == "__main__":

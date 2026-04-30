@@ -7,7 +7,7 @@ connectivity matrix.
 
 Primary workflow
 ----------------
-1) (Optional) Prepare merged time series per subject
+1) Prepare merged time series per subject
     - Load cortical and subcortical parcellated time series
     - Identify any missing subjects
     - Handle NaNs via per-ROI interpolation
@@ -21,7 +21,7 @@ Primary workflow
     - Average across subjects (arithmetic mean or Fisher-z averaging)
     - Optionally save per-subject matrices and the group mean
 
-3) Plot the average connectivity matrix
+3) Plot example subject's connectivity matrix and the group average matrix
 
 Expected `data_dir` layout
 --------------------------
@@ -74,6 +74,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+from nilearn import plotting
+import matplotlib.pyplot as plt
+from nilearn.connectome import ConnectivityMeasure
 
 # ==============================================================================
 # UTILITIES
@@ -500,8 +504,6 @@ def compute_average_connectivity(
         If the metadata CSV is empty or required columns are missing.
     """
 
-    from nilearn.connectome import ConnectivityMeasure
-
     data_dir = Path(data_dir)
     metadata_paths_csv = Path(metadata_paths_csv)
 
@@ -567,11 +569,11 @@ def compute_average_connectivity(
 # ==============================================================================
 # VISUALIZATION
 # ==============================================================================
-def plot_average_connectivity_matrix(
+def plot_connectivity_matrix(
     avg_connectivity: np.ndarray,
     labels_path: Optional[Path],
     out_path: Path,
-    title: str = "Averaged Functional Connectivity Matrix\n(Schaefer7n1000p + TianSubcortexS4)",
+    title: str = None,
     figure: Tuple[int, int] = (20, 20),
     cmap: str = "seismic",
 ) -> None:
@@ -601,9 +603,6 @@ def plot_average_connectivity_matrix(
       open an interactive window in non-headless environments).
     """
 
-    from nilearn import plotting
-    import matplotlib.pyplot as plt
-
     labels = None
     if labels_path is not None and Path(labels_path).exists():
         labels = Path(labels_path).read_text(encoding="utf-8").splitlines()
@@ -622,6 +621,6 @@ def plot_average_connectivity_matrix(
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, bbox_inches="tight", dpi=300, format="svg")
+    plt.savefig(out_path, bbox_inches="tight", dpi=300)
     plotting.show()
     plt.close()
